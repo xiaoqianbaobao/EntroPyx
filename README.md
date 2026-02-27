@@ -25,7 +25,6 @@
   - **在线编辑**: 集成 Markdown 编辑器，支持在线修改 PRD 内容并实时保存。
 
 ### ⚙️ 配置变更
-- **AI 模型接口**: 默认 API 地址已更新为内部 OCR Server (`https://ocrserver.bestpay.com.cn/...`)，无需额外配置。
 - **环境变量**: 推荐配置 `DEEPSEEK_API_KEY` 以支持更高级的 AI 功能（如 ASR 语音转写）。
 
 ---
