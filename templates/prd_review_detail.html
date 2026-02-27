@@ -1,0 +1,135 @@
+{% extends 'base.html' %}
+
+{% block title %}PRD评审详情 - {{ prd_review.title }} - 熵减X-AI{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <a href="/prd-review/prd-reviews/" class="text-decoration-none"><i class="bi bi-arrow-left"></i> 返回PRD列表</a>
+        <h2 class="mt-2">{{ prd_review.title }}</h2>
+    </div>
+</div>
+
+<!-- 评分概览 -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-muted">完整性</h5>
+                <h2 class="text-primary">{{ prd_review.completeness_score|floatformat:1 }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-muted">一致性</h5>
+                <h2 class="text-success">{{ prd_review.consistency_score|floatformat:1 }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-muted">风险</h5>
+                <h2 class="text-warning">{{ prd_review.risk_score|floatformat:1 }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-muted">综合得分</h5>
+                <h2>{{ prd_review.overall_score|floatformat:1 }}</h2>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 基本信息 -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">基本信息</h5>
+    </div>
+    <div class="card-body">
+        <table class="table">
+            <tr>
+                <td style="width: 120px;"><strong>文件类型</strong></td>
+                <td>{{ prd_review.get_file_type_display }}</td>
+                <td style="width: 120px;"><strong>文件大小</strong></td>
+                <td>{{ prd_review.file_size|filesizeformat }}</td>
+            </tr>
+            <tr>
+                <td><strong>创建人</strong></td>
+                <td>{{ prd_review.created_by.username }}</td>
+                <td><strong>创建时间</strong></td>
+                <td>{{ prd_review.created_at|date:"Y-m-d H:i" }}</td>
+            </tr>
+            <tr>
+                <td><strong>评审状态</strong></td>
+                <td>
+                    <span class="badge {% if prd_review.review_status == 'APPROVED' %}bg-success{% elif prd_review.review_status == 'REJECTED' %}bg-danger{% else %}bg-warning{% endif %}">
+                        {{ prd_review.get_review_status_display }}
+                    </span>
+                </td>
+            </tr>
+        </table>
+        <a href="{{ prd_review.file.url }}" target="_blank" class="btn btn-outline-primary">
+            <i class="bi bi-download"></i> 下载PRD文件
+        </a>
+    </div>
+</div>
+
+<!-- AI建议 -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">AI改进建议</h5>
+    </div>
+    <div class="card-body">
+        {{ prd_review.ai_suggestions|linebreaks }}
+    </div>
+</div>
+
+<!-- 发现的问题 -->
+{% if prd_review.issues_found %}
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">发现的问题 ({{ prd_review.issues_found|length }})</h5>
+    </div>
+    <div class="card-body">
+        {% for issue in prd_review.issues_found %}
+        <div class="alert {% if issue.severity == 'high' %}alert-danger{% elif issue.severity == 'medium' %}alert-warning{% else %}alert-info{% endif %}">
+            <strong>{{ issue.type|upper }} - {{ issue.severity|upper }}</strong>
+            <p class="mb-1 mt-2">{{ issue.description }}</p>
+            <small><strong>建议:</strong> {{ issue.suggestion }}</small>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- 用户故事 -->
+{% if prd_review.user_stories %}
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">用户故事 ({{ prd_review.user_stories|length }})</h5>
+    </div>
+    <div class="card-body">
+        <ul class="list-group">
+            {% for story in prd_review.user_stories %}
+            <li class="list-group-item">
+                <strong>{{ story.story }}</strong>
+                {% if story.acceptance %}
+                <ul class="mt-2 mb-0">
+                    {% for acc in story.acceptance %}
+                    <li>{{ acc }}</li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

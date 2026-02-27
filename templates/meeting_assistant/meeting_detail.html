@@ -1,0 +1,394 @@
+{% extends "base.html" %}
+
+{% block title %}{{ recording.meeting_title }} - 熵减X-AI{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="bi bi-mic"></i> {{ recording.meeting_title }}</h2>
+                <div>
+                    <a href="{% url 'meeting_assistant:meeting_list' %}" class="btn btn-outline-secondary">
+                        <i class="bi bi-arrow-left"></i> 返回列表
+                    </a>
+                </div>
+            </div>
+            
+            <!-- 会议信息卡片 -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">会议信息</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p><strong>仓库:</strong> {{ recording.repository.name }}</p>
+                            <p><strong>会议时间:</strong> {{ recording.meeting_date|date:"Y-m-d H:i" }}</p>
+                            <p><strong>参会人员:</strong> {{ recording.participants }}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <p><strong>时长:</strong> {{ recording.duration }}秒</p>
+                            <p><strong>状态:</strong> 
+                                <span class="badge status-badge-{{ recording.status }}">
+                                    {{ recording.get_status_display }}
+                                </span>
+                            </p>
+                            <p><strong>上传时间:</strong> {{ recording.upload_time|date:"Y-m-d H:i" }}</p>
+                        </div>
+                    </div>
+                    
+                    <!-- 音频播放器 -->
+                    <div class="mt-3">
+                        <h6>录音播放</h6>
+                        <audio controls style="width: 100%;">
+                            <source src="/meeting-assistant/api/recordings/{{ recording.id }}/audio/" type="audio/mpeg">
+                            您的浏览器不支持音频播放。
+                        </audio>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 转写文本 -->
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">转写文本 ({{ transcripts|length }} 条)</h5>
+                    {% if recording.status == 'completed' %}
+                        <button class="btn btn-sm btn-primary" id="generateSummaryBtn">
+                            <i class="bi bi-magic"></i> 生成纪要
+                        </button>
+                        <button class="btn btn-sm btn-info" id="generateWithTemplateBtn">
+                            <i class="bi bi-file-earmark-text"></i> 选择模板生成
+                        </button>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    {% if transcripts %}
+                        <div class="transcript-container">
+                            {% for transcript in transcripts %}
+                            <div class="transcript-item">
+                                <div class="transcript-header">
+                                    <span class="speaker-badge">{{ transcript.speaker }}</span>
+                                    <span class="timestamp">{{ transcript.start_time }}s - {{ transcript.end_time }}s</span>
+                                </div>
+                                <div class="transcript-content">
+                                    {{ transcript.content }}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="text-muted">
+                            {% if recording.status == 'processing' %}
+                                <i class="bi bi-hourglass-split"></i> 正在处理中，请稍候...
+                            {% elif recording.status == 'failed' %}
+                                <i class="bi bi-exclamation-triangle"></i> 处理失败: {{ recording.error_message }}
+                            {% else %}
+                                <i class="bi bi-info-circle"></i> 暂无转写文本
+                            {% endif %}
+                        </p>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- 会议纪要 -->
+            {% if summary %}
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">会议纪要</h5>
+                </div>
+                <div class="card-body">
+                    <h6>{{ summary.title }}</h6>
+                    <p>{{ summary.summary_text }}</p>
+                    
+                    <div class="mt-3">
+                        <h6>讨论要点</h6>
+                        <ul>
+                            {% for point in summary.key_points %}
+                            <li>{{ point }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    
+                    {% if summary.decisions %}
+                    <div class="mt-3">
+                        <h6>决策事项</h6>
+                        <ul>
+                            {% for decision in summary.decisions %}
+                            <li>✅ {{ decision }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
+                    
+                    <div class="mt-3">
+                        <a href="{% url 'meeting_assistant:summary_detail' summary.id %}" class="btn btn-success">
+                            <i class="bi bi-file-text"></i> 查看完整纪要
+                        </a>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+        </div>
+    </div>
+</div>
+
+<!-- 模板选择模态框 -->
+<div class="modal fade" id="templateModal" tabindex="-1" aria-labelledby="templateModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="templateModalLabel">📄 选择文档模板</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted">选择您需要的文档格式，AI将为您生成</p>
+                
+                <div class="template-grid">
+                    <div class="template-card" onclick="selectTemplate('图文纪要')">
+                        <div class="template-icon">📊</div>
+                        <div class="template-title">图文纪要</div>
+                        <div class="template-desc">包含图表和要点的可视化纪要</div>
+                    </div>
+                    
+                    <div class="template-card" onclick="selectTemplate('会议纪要')">
+                        <div class="template-icon">📋</div>
+                        <div class="template-title">会议纪要</div>
+                        <div class="template-desc">标准的会议记录格式</div>
+                    </div>
+                    
+                    <div class="template-card" onclick="selectTemplate('面试报告')">
+                        <div class="template-icon">👤</div>
+                        <div class="template-title">面试报告</div>
+                        <div class="template-desc">包含面试评估和建议</div>
+                    </div>
+                    
+                    <div class="template-card" onclick="selectTemplate('学习笔记')">
+                        <div class="template-icon">📚</div>
+                        <div class="template-title">学习笔记</div>
+                        <div class="template-desc">知识点的结构化总结</div>
+                    </div>
+                    
+                    <div class="template-card" onclick="selectTemplate('日常记录')">
+                        <div class="template-icon">📝</div>
+                        <div class="template-title">日常记录</div>
+                        <div class="template-desc">简洁的日常备忘录</div>
+                    </div>
+                    
+                    <div class="template-card" onclick="selectTemplate('项目总结')">
+                        <div class="template-icon">📈</div>
+                        <div class="template-title">项目总结</div>
+                        <div class="template-desc">项目进度和成果总结</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.transcript-container {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.transcript-item {
+    padding: 10px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.transcript-item:hover {
+    background-color: #f5f5f5;
+}
+
+.transcript-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 5px;
+}
+
+.speaker-badge {
+    background-color: #007bff;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+}
+
+.timestamp {
+    color: #6c757d;
+    font-size: 12px;
+}
+
+.transcript-content {
+    padding-left: 10px;
+}
+
+.status-badge-uploaded {
+    background-color: #6c757d;
+    color: white;
+}
+
+.status-badge-processing {
+    background-color: #ffc107;
+    color: black;
+}
+
+.status-badge-completed {
+    background-color: #28a745;
+    color: white;
+}
+
+.status-badge-failed {
+    background-color: #dc3545;
+    color: white;
+}
+
+.template-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    margin: 20px 0;
+}
+
+.template-card {
+    border: 2px solid #dee2e6;
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.template-card:hover {
+    border-color: #007bff;
+    transform: translateY(-5px);
+    box-shadow: 0 5px 15px rgba(0, 123, 255, 0.3);
+}
+
+.template-icon {
+    font-size: 48px;
+    margin-bottom: 10px;
+}
+
+.template-title {
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.template-desc {
+    font-size: 12px;
+    color: #6c757d;
+}
+</style>
+
+<script>
+// 修复空指针错误：只有在按钮存在时才添加事件监听器
+const generateSummaryBtn = document.getElementById('generateSummaryBtn');
+if (generateSummaryBtn) {
+    generateSummaryBtn.addEventListener('click', function() {
+        const btn = this;
+        const recordingId = {{ recording.id }};
+        
+        btn.disabled = true;
+        btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 生成中...';
+        
+        fetch(`/meeting-assistant/api/recordings/${recordingId}/generate-summary/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.task_id) {
+                btn.innerHTML = '<i class="bi bi-check"></i> 生成任务已提交';
+                // 3秒后刷新页面
+                setTimeout(() => {
+                    window.location.reload();
+                }, 3000);
+            } else if (data.status === 'already_exists') {
+                alert('纪要已存在，将跳转到纪要详情页');
+                window.location.href = `/meeting-assistant/summary/${data.summary_id}/`;
+            } else {
+                throw new Error(data.error || '生成失败');
+            }
+        })
+        .catch(error => {
+            alert('生成失败: ' + error.message);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-magic"></i> 生成纪要';
+        });
+    });
+}
+
+// 模板选择按钮
+const generateWithTemplateBtn = document.getElementById('generateWithTemplateBtn');
+if (generateWithTemplateBtn) {
+    generateWithTemplateBtn.addEventListener('click', function() {
+        const modal = new bootstrap.Modal(document.getElementById('templateModal'));
+        modal.show();
+    });
+}
+
+// 选择模板并生成纪要
+function selectTemplate(templateType) {
+    const recordingId = {{ recording.id }};
+    
+    // 关闭模态框
+    const modal = bootstrap.Modal.getInstance(document.getElementById('templateModal'));
+    modal.hide();
+    
+    // 显示加载状态
+    if (generateWithTemplateBtn) {
+        generateWithTemplateBtn.disabled = true;
+        generateWithTemplateBtn.innerHTML = `<i class="bi bi-hourglass-split"></i> 正在生成${templateType}...`;
+    }
+    
+    fetch(`/meeting-assistant/api/recordings/${recordingId}/generate-summary/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        body: JSON.stringify({
+            template_type: templateType,
+            force_regenerate: true
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.task_id) {
+            alert(`${templateType}生成任务已提交，请稍后查看`);
+            // 3秒后刷新页面
+            setTimeout(() => {
+                window.location.reload();
+            }, 3000);
+        } else {
+            throw new Error(data.error || '生成失败');
+        }
+    })
+    .catch(error => {
+        alert('生成失败: ' + error.message);
+        if (generateWithTemplateBtn) {
+            generateWithTemplateBtn.disabled = false;
+            generateWithTemplateBtn.innerHTML = '<i class="bi bi-file-earmark-text"></i> 选择模板生成';
+        }
+    });
+}
+
+// 每30秒检查一次状态
+setInterval(() => {
+    fetch(`/meeting-assistant/api/recordings/{{ recording.id }}/status/`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status !== '{{ recording.status }}') {
+                window.location.reload();
+            }
+        });
+}, 30000);
+</script>
+{% endblock %}

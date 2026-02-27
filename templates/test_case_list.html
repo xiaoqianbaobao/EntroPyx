@@ -1,0 +1,556 @@
+{% extends 'base.html' %}
+
+{% block title %}测试智能体 - 天枢效能平台{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-bug"></i> 测试智能体</h2>
+    <div>
+        <a href="/test-case/test-cases/generate/" class="btn btn-success me-2">
+            <i class="bi bi-magic"></i> AI生成用例
+        </a>
+        <button class="btn btn-danger me-2 text-white" id="batchDeleteBtn" style="display: none;" onclick="batchDelete()">
+            <i class="bi bi-trash"></i> 批量删除
+        </button>
+        <button class="btn btn-info me-2 text-white" onclick="showBatchConfigModal()">
+            <i class="bi bi-gear"></i> 批量配置Dubbo
+        </button>
+        <button class="btn btn-primary" onclick="executeSelected()">
+            <i class="bi bi-play"></i> 执行选中
+        </button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th><input type="checkbox" id="selectAll" onclick="toggleSelectAll()"></th>
+                    <th>用例编号</th>
+                    <th>标题</th>
+                    <th>类型</th>
+                    <th>优先级</th>
+                    <th>Dubbo接口</th>
+                    <th>评审状态</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for case in test_cases %}
+                <tr>
+                    <td><input type="checkbox" class="case-checkbox" value="{{ case.id }}" onclick="updateBatchBtn()"></td>
+                    <td><code>{{ case.case_id }}</code></td>
+                    <td>{{ case.title }}</td>
+                    <td><span class="badge bg-info">{{ case.get_type_display }}</span></td>
+                    <td>
+                        <span class="badge {% if case.priority == 'P0' %}bg-danger{% elif case.priority == 'P1' %}bg-warning{% else %}bg-secondary{% endif %}">
+                            {{ case.priority }}
+                        </span>
+                    </td>
+                    <td><small>{{ case.dubbo_interface|default:"-" }}</small></td>
+                    <td>
+                        <span class="badge {% if case.review_status == 'APPROVED' %}bg-success{% elif case.review_status == 'REJECTED' %}bg-danger{% else %}bg-secondary{% endif %}">
+                            {{ case.get_review_status_display }}
+                        </span>
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary" onclick="showEditModal('{{ case.id }}')">
+                            <i class="bi bi-pencil"></i> 编辑
+                        </button>
+                        <a href="/test-case/test-cases/{{ case.id }}/" class="btn btn-sm btn-outline-secondary ms-1">
+                            <i class="bi bi-eye"></i>
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- 分页控件 -->
+        <div class="d-flex justify-content-between align-items-center mt-4">
+            <div class="d-flex align-items-center">
+                <span class="me-2">每页显示:</span>
+                <select class="form-select form-select-sm" style="width: 70px;" onchange="changePerPage(this.value)">
+                    <option value="10" {% if per_page == 10 %}selected{% endif %}>10</option>
+                    <option value="20" {% if per_page == 20 %}selected{% endif %}>20</option>
+                    <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+                    <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+                </select>
+                <span class="ms-2 text-muted">共 {{ total_count }} 条记录</span>
+            </div>
+
+            {% if test_cases.has_other_pages %}
+            <nav aria-label="Page navigation">
+                <ul class="pagination mb-0">
+                    {% if test_cases.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ test_cases.previous_page_number }}&per_page={{ per_page }}">
+                            <span aria-hidden="true">&laquo;</span>
+                        </a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled">
+                        <span class="page-link">&laquo;</span>
+                    </li>
+                    {% endif %}
+                    
+                    {% for i in test_cases.paginator.page_range %}
+                        {% if test_cases.number == i %}
+                        <li class="page-item active">
+                            <span class="page-link">{{ i }}</span>
+                        </li>
+                        {% elif i > test_cases.number|add:'-3' and i < test_cases.number|add:'3' %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ i }}&per_page={{ per_page }}">{{ i }}</a>
+                        </li>
+                        {% endif %}
+                    {% endfor %}
+                    
+                    {% if test_cases.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ test_cases.next_page_number }}&per_page={{ per_page }}">
+                            <span aria-hidden="true">&raquo;</span>
+                        </a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled">
+                        <span class="page-link">&raquo;</span>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- 批量配置模态框 -->
+<div class="modal fade" id="batchConfigModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">批量配置 Dubbo 接口</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="batchConfigForm">
+                    <div class="mb-3">
+                        <label class="form-label">Dubbo 服务接口</label>
+                        <input type="text" class="form-control" name="dubbo_service" placeholder="com.example.Service">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Dubbo 方法名</label>
+                        <input type="text" class="form-control" name="dubbo_method" placeholder="methodName">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">默认参数 (JSON)</label>
+                        <textarea class="form-control" name="dubbo_params" rows="3" placeholder='{"key": "value"}'></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">优先级</label>
+                        <select class="form-select" name="priority">
+                            <option value="">不修改</option>
+                            <option value="P0">P0</option>
+                            <option value="P1">P1</option>
+                            <option value="P2">P2</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="submitBatchConfig()">保存配置</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑用例模态框 -->
+<div class="modal fade" id="editCaseModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">编辑测试用例</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editCaseForm">
+                    <input type="hidden" name="id">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">标题</label>
+                            <input type="text" class="form-control" name="title" required>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">类型</label>
+                            <select class="form-select" name="type">
+                                <option value="FUNCTION">功能测试</option>
+                                <option value="PERFORMANCE">性能测试</option>
+                                <option value="SECURITY">安全测试</option>
+                                <option value="COMPATIBILITY">兼容性测试</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">优先级</label>
+                            <select class="form-select" name="priority">
+                                <option value="P0">P0</option>
+                                <option value="P1">P1</option>
+                                <option value="P2">P2</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">前置条件</label>
+                        <input type="text" class="form-control" name="precondition">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">测试步骤 (每行一步)</label>
+                        <textarea class="form-control" name="steps" rows="4"></textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">预期结果</label>
+                        <textarea class="form-control" name="expected_result" rows="2"></textarea>
+                    </div>
+                    
+                    <h6 class="mt-4 mb-3 border-bottom pb-2">Dubbo 配置</h6>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">接口名</label>
+                            <input type="text" class="form-control" name="dubbo_service">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">方法名</label>
+                            <input type="text" class="form-control" name="dubbo_method">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">参数 (JSON)</label>
+                        <textarea class="form-control" name="dubbo_params" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="submitEditCase()">保存修改</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 正在努力开发中的工具 -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-tools"></i> 正在努力开发中...</h5>
+                <div class="row mt-3">
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-light border">
+                            <div class="card-body text-center">
+                                <i class="bi bi-speedometer2" style="font-size: 2rem; color: #6c757d;"></i>
+                                <h6 class="mt-2">性能测试</h6>
+                                <small class="text-muted">自动性能压测</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-light border">
+                            <div class="card-body text-center">
+                                <i class="bi bi-shield-check" style="font-size: 2rem; color: #6c757d;"></i>
+                                <h6 class="mt-2">安全测试</h6>
+                                <small class="text-muted">漏洞扫描检测</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-light border">
+                            <div class="card-body text-center">
+                                <i class="bi bi-phone" style="font-size: 2rem; color: #6c757d;"></i>
+                                <h6 class="mt-2">兼容性测试</h6>
+                                <small class="text-muted">多平台兼容验证</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-light border">
+                            <div class="card-body text-center">
+                                <i class="bi bi-bar-chart" style="font-size: 2rem; color: #6c757d;"></i>
+                                <h6 class="mt-2">测试报告</h6>
+                                <small class="text-muted">智能测试报告生成</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// 改变每页显示条数
+function changePerPage(perPage) {
+    const urlParams = new URLSearchParams(window.location.search);
+    urlParams.set('per_page', perPage);
+    urlParams.set('page', 1); // 切换条数时重置到第一页
+    window.location.search = urlParams.toString();
+}
+
+// 获取 CSRF Token
+function getCsrfToken() {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, 10) === ('csrftoken=')) {
+                cookieValue = decodeURIComponent(cookie.substring(10));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+function toggleSelectAll() {
+    const selectAll = document.getElementById('selectAll');
+    document.querySelectorAll('.case-checkbox').forEach(cb => cb.checked = selectAll.checked);
+    updateBatchBtn();
+}
+
+function updateBatchBtn() {
+    const selected = getSelectedIds();
+    const btn = document.getElementById('batchDeleteBtn');
+    if (selected.length > 0) {
+        btn.style.display = 'inline-block';
+    } else {
+        btn.style.display = 'none';
+    }
+}
+
+function batchDelete() {
+    const selected = getSelectedIds();
+    if (selected.length === 0) return;
+    
+    if (!confirm(`确定要删除选中的 ${selected.length} 个测试用例吗？`)) {
+        return;
+    }
+    
+    fetch('/api/v1/test-case/test-cases/batch_delete/', {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({ ids: selected })
+    }).then(r => r.json()).then(data => {
+        if (data.code === 0) {
+            alert(data.message);
+            location.reload();
+        } else {
+            alert(data.message || '删除失败');
+        }
+    });
+}
+
+function getSelectedIds() {
+    return Array.from(document.querySelectorAll('.case-checkbox:checked')).map(cb => cb.value);
+}
+
+function executeSelected() {
+    const selected = getSelectedIds();
+    if (selected.length === 0) {
+        alert('请选择要执行的测试用例');
+        return;
+    }
+    
+    fetch('/api/v1/test-case/execute/', {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({ case_ids: selected })
+    }).then(r => r.json()).then(data => {
+        alert(data.message || '测试执行中，请稍后查看报告');
+    });
+}
+
+// 批量配置相关逻辑
+let batchConfigModal = null;
+function showBatchConfigModal() {
+    const selected = getSelectedIds();
+    if (selected.length === 0) {
+        alert('请先勾选需要配置的测试用例');
+        return;
+    }
+    if (!batchConfigModal) {
+        batchConfigModal = new bootstrap.Modal(document.getElementById('batchConfigModal'));
+    }
+    batchConfigModal.show();
+}
+
+function submitBatchConfig() {
+    const selected = getSelectedIds();
+    const form = document.getElementById('batchConfigForm');
+    const formData = new FormData(form);
+    const updateData = {};
+    
+    formData.forEach((value, key) => {
+        if (value.trim() !== '') {
+            updateData[key] = value;
+        }
+    });
+    
+    // 尝试解析 JSON 参数
+    if (updateData.dubbo_params) {
+        try {
+            updateData.dubbo_params = JSON.parse(updateData.dubbo_params);
+        } catch (e) {
+            alert('Dubbo 参数 JSON 格式错误');
+            return;
+        }
+    }
+    
+    if (Object.keys(updateData).length === 0) {
+        alert('请至少填写一项配置');
+        return;
+    }
+    
+    fetch('/api/v1/test-case/test-cases/batch_update/', {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({
+            case_ids: selected,
+            update_data: updateData
+        })
+    }).then(r => r.json()).then(data => {
+        if (data.code === 0) {
+            alert(data.message);
+            location.reload();
+        } else {
+            alert(data.message || '更新失败');
+        }
+    });
+}
+
+// 编辑用例相关逻辑
+let editCaseModal = null;
+function showEditModal(caseId) {
+    // 获取详情
+    // 注意：后端 ModelViewSet 默认返回的详情不包含 code: 0 这种包装结构，而是直接返回对象
+    // 或者，如果前端使用的是 drf-renderer-response 这种包，可能会有包装
+    // 根据之前的 list 接口来看，似乎是手动包装了 Response({'code': 0, 'data': ...})
+    // 但 retrieve 接口（GET /api/v1/test-case/test-cases/{id}/）在 ModelViewSet 中默认是直接返回 serializer.data
+    // 除非我们重写了 retrieve 方法
+    
+    fetch(`/api/v1/test-case/test-cases/${caseId}/`)
+        .then(r => r.json())
+        .then(data => {
+            // 兼容两种返回格式：
+            // 1. { code: 0, data: { ... } }
+            // 2. { id: 1, title: "..." }  (Django Rest Framework 默认)
+            
+            let caseData = null;
+            if (data.code === 0 && data.data) {
+                caseData = data.data;
+            } else if (data.id) {
+                caseData = data;
+            }
+            
+            if (caseData) {
+                const form = document.getElementById('editCaseForm');
+                
+                // 填充表单
+                form.querySelector('[name="id"]').value = caseData.id;
+                form.querySelector('[name="title"]').value = caseData.title;
+                form.querySelector('[name="type"]').value = caseData.type;
+                form.querySelector('[name="priority"]').value = caseData.priority;
+                form.querySelector('[name="precondition"]').value = caseData.precondition || '';
+                
+                // 步骤处理：数组转文本
+                let stepsText = '';
+                if (Array.isArray(caseData.steps)) {
+                    stepsText = caseData.steps.join('\n');
+                } else {
+                    stepsText = caseData.steps || '';
+                }
+                form.querySelector('[name="steps"]').value = stepsText;
+                
+                form.querySelector('[name="expected_result"]').value = caseData.expected_result || '';
+                form.querySelector('[name="dubbo_service"]').value = caseData.dubbo_service || '';
+                form.querySelector('[name="dubbo_method"]').value = caseData.dubbo_method || '';
+                
+                // 参数处理：JSON转文本
+                let paramsText = '';
+                if (caseData.dubbo_params) {
+                    paramsText = JSON.stringify(caseData.dubbo_params, null, 2);
+                }
+                form.querySelector('[name="dubbo_params"]').value = paramsText;
+                
+                if (!editCaseModal) {
+                    editCaseModal = new bootstrap.Modal(document.getElementById('editCaseModal'));
+                }
+                editCaseModal.show();
+            } else {
+                console.error('Fetch detail failed:', data);
+                alert('获取详情失败: ' + (data.message || '未知错误'));
+            }
+        })
+        .catch(e => {
+            console.error('Fetch error:', e);
+            alert('获取详情请求失败');
+        });
+}
+
+function submitEditCase() {
+    const form = document.getElementById('editCaseForm');
+    const caseId = form.querySelector('[name="id"]').value;
+    const formData = new FormData(form);
+    const updateData = {};
+    
+    formData.forEach((value, key) => {
+        updateData[key] = value;
+    });
+    
+    // 处理步骤：文本转数组
+    if (updateData.steps) {
+        updateData.steps = updateData.steps.split('\n').filter(line => line.trim() !== '');
+    }
+    
+    // 处理参数：文本转JSON
+    if (updateData.dubbo_params) {
+        try {
+            updateData.dubbo_params = JSON.parse(updateData.dubbo_params);
+        } catch (e) {
+            alert('Dubbo 参数 JSON 格式错误');
+            return;
+        }
+    } else {
+        updateData.dubbo_params = {}; // 空参数
+    }
+    
+    fetch(`/api/v1/test-case/test-cases/${caseId}/`, {
+        method: 'PATCH',
+        headers: { 
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify(updateData)
+    }).then(r => r.json()).then(data => {
+        if (data.code === 0) {
+            alert('修改成功');
+            location.reload();
+        } else {
+            alert(data.message || '修改失败');
+        }
+    });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,416 @@
+{% extends 'base.html' %}
+
+{% block title %}数据看板 - 熵减X-AI{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-speedometer2"></i> 数据看板</h2>
+    <div class="d-flex gap-2">
+        <div class="btn-group" role="group">
+            <button type="button" class="btn btn-outline-primary time-range-btn" data-range="today">今日</button>
+            <button type="button" class="btn btn-outline-primary time-range-btn" data-range="week">本周</button>
+            <button type="button" class="btn btn-outline-primary time-range-btn" data-range="month">本月</button>
+            <button type="button" class="btn btn-outline-primary time-range-btn active" data-range="year">年度</button>
+        </div>        <button class="btn btn-primary" onclick="loadDashboardData()">
+            <i class="bi bi-arrow-clockwise"></i> 刷新
+        </button>
+    </div>
+</div>
+
+<!-- PRD评审统计卡片 -->
+
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-file-earmark-text"></i> PRD文档评审</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="stat-item">
+                            <h3 id="prd-total">0</h3>
+                            <p class="text-muted mb-0">总评审数</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-item">
+                            <h3 id="prd-approved" class="text-success">0</h3>
+                            <p class="text-muted mb-0">已通过</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-item">
+                            <h3 id="prd-rejected" class="text-danger">0</h3>
+                            <p class="text-muted mb-0">需修改</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-item">
+                            <h3 id="prd-score">0.0</h3>
+                            <p class="text-muted mb-0">平均得分</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 代码评审统计卡片 -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0"><i class="bi bi-code-square"></i> 代码评审</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="stat-item">
+                            <h3 id="code-total">0</h3>
+                            <p class="text-muted mb-0">总评审数</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-item">
+                            <h3 id="code-high-risk" class="text-danger">0</h3>
+                            <p class="text-muted mb-0">高风险</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-item">
+                            <h3 id="code-medium-risk" class="text-warning">0</h3>
+                            <p class="text-muted mb-0">中风险</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-item">
+                            <h3 id="code-low-risk" class="text-success">0</h3>
+                            <p class="text-muted mb-0">低风险</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 测试用例评审统计卡片 -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="bi bi-check-circle"></i> 测试用例评审</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="stat-item">
+                            <h3 id="test-total">0</h3>
+                            <p class="text-muted mb-0">总用例数</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-item">
+                            <h3 id="test-passed" class="text-success">0</h3>
+                            <p class="text-muted mb-0">已通过</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-item">
+                            <h3 id="test-failed" class="text-danger">0</h3>
+                            <p class="text-muted mb-0">已失败</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-item">
+                            <h3 id="test-pass-rate">0%</h3>
+                            <p class="text-muted mb-0">通过率</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 其他统计信息 -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card stat-card info">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-chat-dots"></i> 待反馈</h5>
+                <h2 id="pending-feedback">0</h2>
+                <p class="card-text mb-0">等待人工确认</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-hdd-network"></i> 活跃仓库</h5>
+                <h2 id="active-repos">0</h2>
+                <p class="card-text mb-0">正在监控的仓库</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card success">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-robot"></i> AI准确率</h5>
+                <h2 id="ai-accuracy">0%</h2>
+                <p class="card-text mb-0">基于用户反馈</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 趋势图 -->
+<div class="row mb-4">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-graph-up"></i> 评审趋势 (近30天)</h5>
+            </div>
+            <div class="card-body">
+                <div id="trendChart" style="height: 350px;"></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-pie-chart"></i> 评审分布</h5>
+            </div>
+            <div class="card-body">
+                <div id="distributionChart" style="height: 350px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 开发者排名模块已移除 -->
+
+<style>
+.stat-item {
+    text-align: center;
+    padding: 15px;
+    border-radius: 8px;
+    background-color: #f8f9fa;
+    transition: transform 0.2s;
+}
+.stat-item:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+.stat-item h3 {
+    margin-bottom: 5px;
+    font-size: 2.5rem;
+    font-weight: bold;
+}
+.time-range-btn.active {
+    background-color: #0d6efd;
+    color: white;
+}
+</style>
+
+<script>
+let currentRange = 'year';
+let trendChart = null;
+let distributionChart = null;
+
+// 加载Dashboard数据
+function loadDashboardData() {
+    fetch(`/api/v1/dashboard/stats/?time_range=${currentRange}`, {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken')
+        }
+    })
+        .then(response => response.json())
+        .then(result => {
+            if (result.code === 0) {
+                updateStats(result.data);
+            }
+        })
+        .catch(error => console.error('Error loading dashboard data:', error));
+}
+
+// 获取CSRF token
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// 更新统计数据
+function updateStats(data) {
+    // PRD评审统计
+    document.getElementById('prd-total').textContent = data.prd_reviews.total;
+    document.getElementById('prd-approved').textContent = data.prd_reviews.approved;
+    document.getElementById('prd-rejected').textContent = data.prd_reviews.rejected;
+    document.getElementById('prd-score').textContent = data.prd_reviews.avg_overall_score.toFixed(2);
+    
+    // 代码评审统计
+    document.getElementById('code-total').textContent = data.code_reviews.total;
+    document.getElementById('code-high-risk').textContent = data.code_reviews.high_risk;
+    document.getElementById('code-medium-risk').textContent = data.code_reviews.medium_risk;
+    document.getElementById('code-low-risk').textContent = data.code_reviews.low_risk;
+    
+    // 测试用例统计
+    document.getElementById('test-total').textContent = data.test_cases.total;
+    document.getElementById('test-passed').textContent = data.test_cases.passed;
+    document.getElementById('test-failed').textContent = data.test_cases.failed;
+    
+    
+    document.getElementById('test-pass-rate').textContent = data.test_cases.pass_rate.toFixed(1) + '%';
+    
+    // 其他统计
+    document.getElementById('pending-feedback').textContent = data.pending_feedback;
+    document.getElementById('active-repos').textContent = data.active_repositories;
+    document.getElementById('ai-accuracy').textContent = data.ai_accuracy_rate.toFixed(1) + '%';
+    
+    // 更新图表
+    updateCharts(data);
+}
+
+// 更新图表
+function updateCharts(data) {
+    if (!trendChart) {
+        trendChart = echarts.init(document.getElementById('trendChart'));
+    }
+    if (!distributionChart) {
+        distributionChart = echarts.init(document.getElementById('distributionChart'));
+    }
+    
+    // 趋势图数据（需要从API获取）
+    fetch('/api/v1/dashboard/trend/', {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken')
+        }
+    })
+        .then(response => response.json())
+        .then(result => {
+            if (result.code === 0) {
+                const trendData = result.data;
+                trendChart.setOption({
+                    tooltip: { trigger: 'axis' },
+                    legend: { data: ['PRD评审', '代码评审', '测试用例'] },
+                    xAxis: { type: 'category', data: trendData.map(d => d.date) },
+                    yAxis: { type: 'value' },
+                    series: [
+                        { name: 'PRD评审', type: 'line', data: trendData.map(d => d.prd_count), itemStyle: { color: '#0d6efd' } },
+                        { name: '代码评审', type: 'line', data: trendData.map(d => d.code_count), itemStyle: { color: '#fd7e14' } },
+                        { name: '测试用例', type: 'line', data: trendData.map(d => d.test_count), itemStyle: { color: '#198754' } }
+                    ]
+                });
+            }
+        });
+    
+    // 分布图
+    distributionChart.setOption({
+        tooltip: { trigger: 'item' },
+        series: [{
+            type: 'pie',
+            radius: ['40%', '70%'],
+            data: [
+                { value: data.prd_reviews.total, name: 'PRD评审', itemStyle: { color: '#0d6efd' } },
+                { value: data.code_reviews.total, name: '代码评审', itemStyle: { color: '#fd7e14' } },
+                { value: data.test_cases.total, name: '测试用例', itemStyle: { color: '#198754' } }
+            ],
+            label: { formatter: '{b}: {c} ({d}%)' }
+        }]
+    });
+}
+
+// 加载开发者排名
+function loadDeveloperRanking() {
+    fetch('/api/v1/dashboard/developer-ranking/', {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken')
+        }
+    })
+        .then(response => response.json())
+        .then(result => {
+            if (result.code === 0) {
+                updateDeveloperRanking(result.data);
+            }
+        })
+        .catch(error => console.error('Error loading developer ranking:', error));
+}
+
+// 更新开发者排名表格
+function updateDeveloperRanking(data) {
+    const tbody = document.getElementById('developer-ranking');
+    
+    if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center">暂无数据</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = data.map((dev, index) => {
+        const rankClass = index === 0 ? 'text-warning' : (index === 1 ? 'text-secondary' : (index === 2 ? 'text-danger' : ''));
+        const rankIcon = index < 3 ? '<i class="bi bi-trophy-fill"></i> ' : '';
+        
+        return `
+            <tr>
+                <td><span class="${rankClass}">${rankIcon}${index + 1}</span></td>
+                <td><strong>${dev.author}</strong></td>
+                <td>${dev.total_commits}</td>
+                <td><span class="text-success">+${dev.lines_added.toLocaleString()}</span></td>
+                <td><span class="text-danger">-${dev.lines_deleted.toLocaleString()}</span></td>
+                <td>${dev.lines_changed.toLocaleString()}</td>
+                <td>
+                    <span class="badge ${dev.high_risk_count > 0 ? 'bg-danger' : 'bg-success'}">
+                        ${dev.high_risk_count}
+                    </span>
+                </td>
+                <td>
+                    <span class="badge ${dev.avg_risk_score > 0.7 ? 'bg-danger' : (dev.avg_risk_score > 0.4 ? 'bg-warning' : 'bg-success')}">
+                        ${dev.avg_risk_score.toFixed(3)}
+                    </span>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// 时间范围切换
+document.querySelectorAll('.time-range-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.time-range-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        currentRange = this.dataset.range;
+        loadDashboardData();
+    });
+});
+
+// 初始加载数据
+document.addEventListener('DOMContentLoaded', function() {
+    loadDashboardData();
+    // loadDeveloperRanking(); // 移除排名加载
+});
+
+// 窗口大小改变时重新渲染图表
+window.addEventListener('resize', function() {
+    if (trendChart) trendChart.resize();
+    if (distributionChart) distributionChart.resize();
+});
+</script>
+{% endblock %}

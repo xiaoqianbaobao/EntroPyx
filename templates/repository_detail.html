@@ -1,0 +1,696 @@
+{% extends 'base.html' %}
+
+{% block title %}仓库详情 - {{ repository.name }} - 熵减X-AI{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <a href="/repository/" class="text-decoration-none"><i class="bi bi-arrow-left"></i> 返回仓库列表</a>
+        <h2 class="mt-2"><i class="bi bi-git"></i> {{ repository.name }}</h2>
+    </div>
+    <div>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#editRepoModal">
+            <i class="bi bi-pencil"></i> 编辑配置
+        </button>
+        <button class="btn btn-success ms-2" id="triggerReviewBtn" onclick="triggerReview()">
+            <i class="bi bi-play"></i> 立即评审
+        </button>
+        <button class="btn btn-danger ms-2 d-none" id="cancelReviewBtn" onclick="cancelReview()">
+            <i class="bi bi-stop"></i> 终止评审
+        </button>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">仓库配置</h5>
+            </div>
+            <div class="card-body">
+                <table class="table">
+                    <tr>
+                        <td style="width: 120px;"><strong>Git地址</strong></td>
+                        <td><code>{{ repository.git_url }}</code></td>
+                    </tr>
+                    <tr>
+                        <td><strong>本地路径</strong></td>
+                        <td><code>{{ repository.local_path }}</code></td>
+                    </tr>
+                    <tr>
+                        <td><strong>认证方式</strong></td>
+                        <td>{{ repository.get_auth_type_display }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>状态</strong></td>
+                        <td>
+                            {% if repository.is_active %}
+                            <span class="badge bg-success">启用</span>
+                            {% else %}
+                            <span class="badge bg-secondary">停用</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">评审配置</h5>
+            </div>
+            <div class="card-body">
+                <table class="table">
+                    <tr>
+                        <td style="width: 120px;"><strong>高风险阈值</strong></td>
+                        <td>{{ repository.high_risk_threshold }}%</td>
+                    </tr>
+                    <tr>
+                        <td><strong>中风险阈值</strong></td>
+                        <td>{{ repository.medium_risk_threshold }}%</td>
+                    </tr>
+                    <tr>
+                        <td><strong>评审分支</strong></td>
+                        <td>
+                            {% if repository.review_all_branches %}
+                            <span class="badge bg-info">所有分支</span>
+                            {% else %}
+                            <code>{{ repository.review_branch }}</code>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>钉钉Webhook</strong></td>
+                        <td>
+                            {% if repository.dingtalk_webhook %}
+                            <span class="badge bg-success">已配置</span>
+                            {% else %}
+                            <span class="badge bg-secondary">未配置</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>创建时间</strong></td>
+                        <td>{{ repository.created_at|date:"Y-m-d H:i" }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 评审模式配置 -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-gear"></i> 评审模式配置</h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <!-- 定时评审配置 -->
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0"><i class="bi bi-clock"></i> 定时评审</h6>
+                        <button class="btn btn-sm btn-outline-primary" onclick="openScheduledConfigModal()">
+                            <i class="bi bi-plus"></i> 配置
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        {% if scheduled_configs %}
+                        {% for config in scheduled_configs %}
+                        <div class="mb-3 {% if not forloop.last %}border-bottom pb-3{% endif %}">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <strong>{{ config.name }}</strong>
+                                    <span class="badge {% if config.is_active %}bg-success{% else %}bg-secondary{% endif %} ms-2">
+                                        {% if config.is_active %}启用{% else %}禁用{% endif %}
+                                    </span>
+                                </div>
+                                <small class="text-muted">{{ config.cron_expression }}</small>
+                            </div>
+                            <small class="text-muted d-block mt-1">
+                                {% if config.review_all_branches %}所有分支{% else %}{{ config.branches|join:", " }}{% endif %}
+                                {% if config.last_run_at %} | 上次运行: {{ config.last_run_at|date:"m-d H:i" }}{% endif %}
+                            </small>
+                        </div>
+                        {% endfor %}
+                        {% else %}
+                        <p class="text-muted text-center py-3">暂无定时评审配置</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- 实时监控配置 -->
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0"><i class="bi bi-broadcast"></i> 实时监控</h6>
+                        <button class="btn btn-sm btn-outline-primary" onclick="openRealtimeConfigModal()">
+                            <i class="bi bi-gear"></i> 配置
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        {% if realtime_config %}
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <span class="badge {% if realtime_config.is_active %}bg-success{% else %}bg-secondary{% endif %}">
+                                {% if realtime_config.is_active %}监控中{% else %}已停用{% endif %}
+                            </span>
+                            <button class="btn btn-sm {% if realtime_config.is_active %}btn-outline-danger{% else %}btn-outline-success{% endif %}" onclick="toggleRealtimeMonitor()">
+                                {% if realtime_config.is_active %}<i class="bi bi-pause"></i> 停用{% else %}<i class="bi bi-play"></i> 启用{% endif %}
+                            </button>
+                        </div>
+                        <table class="table table-sm">
+                            <tr>
+                                <td><strong>监控分支</strong></td>
+                                <td>
+                                    {% if realtime_config.monitored_branches %}
+                                    {{ realtime_config.monitored_branches|join:", " }}
+                                    {% else %}
+                                    <span class="text-muted">未配置</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>检查间隔</strong></td>
+                                <td>{{ realtime_config.check_interval }} 秒</td>
+                            </tr>
+                            <tr>
+                                <td><strong>自动评审</strong></td>
+                                <td>
+                                    {% if realtime_config.auto_review %}
+                                    <span class="badge bg-success">是</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">否</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>通知级别</strong></td>
+                                <td>{{ realtime_config.get_notify_level_display }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>最后检查</strong></td>
+                                <td>
+                                    {% if realtime_config.last_checked_at %}
+                                    {{ realtime_config.last_checked_at|date:"m-d H:i" }}
+                                    {% else %}
+                                    <span class="text-muted">未检查</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        </table>
+                        {% else %}
+                        <p class="text-muted text-center py-3">暂未配置实时监控</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 最近评审记录 -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-clock-history"></i> 最近评审记录</h5>
+    </div>
+    <div class="card-body">
+        {% if reviews %}
+        <div class="list-group list-group-flush">
+            {% for review in reviews %}
+            <div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <span class="badge {% if review.risk_level == 'HIGH' %}risk-badge-HIGH{% elif review.risk_level == 'MEDIUM' %}risk-badge-MEDIUM{% else %}risk-badge-LOW{% endif %} me-2">
+                            {{ review.get_risk_level_display }}
+                        </span>
+                        <code class="ms-2">{{ review.commit_hash|slice:":8" }}</code>
+                        <span class="ms-2">{{ review.commit_message|truncatechars:50 }}</span>
+                    </div>
+                    <small class="text-muted">{{ review.created_at|date:"Y-m-d H:i" }}</small>
+                </div>
+                <small class="text-muted">
+                    <i class="bi bi-person"></i> {{ review.author }}
+                    <span class="ms-3"><i class="bi bi-git-branch"></i> {{ review.branch }}</span>
+                </small>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-4">暂无评审记录</p>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+// 全局变量：实时监控配置数据
+window.realtimeConfigData = {% if realtime_config %}{{ realtime_config|safe }}{% else %}null{% endif %};
+
+function triggerReview() {
+    if (confirm('确定要立即触发该仓库的代码评审吗？')) {
+        // 显示加载提示
+        const btn = event.target;
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 评审中...';
+        btn.disabled = true;
+
+        // 根据仓库配置确定要评审的分支
+        const requestData = {
+            repository_id: {{ repository.id }},
+            branch: '{{ repository.review_branch|default:"master" }}',
+            all_branches: {{ repository.review_all_branches|yesno:"true,false" }}
+        };
+
+        fetch('/api/v1/code-review/reviews/manual_trigger/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            credentials: 'include',
+            body: JSON.stringify(requestData)
+        }).then(r => {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+
+            if (!r.ok) {
+                throw new Error(`HTTP错误: ${r.status}`);
+            }
+            return r.json();
+        }).then(data => {
+            if (data.code === 0) {
+                alert(data.message || '评审任务已提交，请在任务历史中查看进度');
+                // 显示终止按钮
+                toggleReviewButtons(true, data.data.task_id);
+                // 可以跳转到任务历史页面
+                // window.location.href = '/repository/';
+            } else {
+                alert('触发失败: ' + (data.message || '未知错误'));
+            }
+        }).catch(err => {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            alert('错误: ' + err.message);
+        });
+    }
+}
+
+function cancelReview() {
+    if (confirm('确定要终止当前评审任务吗？')) {
+        const btn = document.getElementById('cancelReviewBtn');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 终止中...';
+        btn.disabled = true;
+
+        // 获取当前正在运行的任务ID
+        const currentTaskId = btn.dataset.taskId;
+        
+        if (!currentTaskId) {
+            alert('没有找到可终止的任务');
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            return;
+        }
+
+        fetch('/api/v1/code-review/reviews/cancel_task/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            credentials: 'include',
+            body: JSON.stringify({ task_id: currentTaskId })
+        }).then(r => {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+
+            if (!r.ok) {
+                throw new Error(`HTTP错误: ${r.status}`);
+            }
+            return r.json();
+        }).then(data => {
+            if (data.code === 0) {
+                alert(data.message || '任务已终止');
+                // 恢复按钮状态
+                toggleReviewButtons(false, null);
+            } else {
+                alert('终止失败: ' + (data.message || '未知错误'));
+            }
+        }).catch(err => {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            alert('错误: ' + err.message);
+        });
+    }
+}
+
+function toggleReviewButtons(isReviewing, taskId) {
+    const triggerBtn = document.getElementById('triggerReviewBtn');
+    const cancelBtn = document.getElementById('cancelReviewBtn');
+    
+    if (isReviewing) {
+        triggerBtn.classList.add('d-none');
+        cancelBtn.classList.remove('d-none');
+        cancelBtn.dataset.taskId = taskId;
+    } else {
+        triggerBtn.classList.remove('d-none');
+        cancelBtn.classList.add('d-none');
+        cancelBtn.dataset.taskId = '';
+    }
+}
+
+// 切换评审所有分支选项
+function toggleReviewBranch(checkbox) {
+    const branchInput = document.querySelector('input[name="review_branch"]');
+    if (checkbox.checked) {
+        branchInput.disabled = true;
+        branchInput.value = 'all';
+    } else {
+        branchInput.disabled = false;
+        branchInput.value = 'master';
+    }
+}
+
+// 获取CSRF Token
+function getCsrfToken() {
+    return document.cookie.split('; ')
+        .find(row => row.startsWith('csrftoken='))
+        ?.split('=')[1] || '';
+}
+
+// API请求封装
+function apiFetch(url, options = {}) {
+    const headers = {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCsrfToken(),
+        ...options.headers
+    };
+    return fetch(url, {
+        ...options,
+        headers,
+        credentials: 'include'
+    });
+}
+
+// 打开定时评审配置模态框
+function openScheduledConfigModal() {
+    const modal = new bootstrap.Modal(document.getElementById('scheduledConfigModal'));
+    modal.show();
+}
+
+// 保存定时评审配置
+function saveScheduledConfig() {
+    const data = {
+        name: document.getElementById('scheduledName').value,
+        description: document.getElementById('scheduledDescription').value,
+        cron_expression: document.getElementById('scheduledCron').value,
+        branches: document.getElementById('scheduledBranches').value.split(',').map(b => b.trim()).filter(b => b),
+        review_all_branches: document.getElementById('scheduledReviewAllBranches').checked,
+        notify_on_complete: document.getElementById('scheduledNotifyOnComplete').checked,
+        is_active: document.getElementById('scheduledIsActive').checked,
+        repositories: [{{ repository.id }}]
+    };
+
+    apiFetch('/api/v1/code-review/scheduled-configs/', {
+        method: 'POST',
+        body: JSON.stringify(data)
+    }).then(r => r.json()).then(data => {
+        if (data.id || data.code === 0) {
+            alert('定时评审配置已保存');
+            location.reload();
+        } else {
+            alert('保存失败: ' + (data.message || JSON.stringify(data)));
+        }
+    }).catch(err => {
+        alert('错误: ' + err.message);
+    });
+}
+
+// 打开实时监控配置模态框
+function openRealtimeConfigModal() {
+    // 从全局变量获取配置数据
+    const config = window.realtimeConfigData || null;
+    if (config && config.id) {
+        document.getElementById('realtimeIsActive').checked = config.is_active;
+        document.getElementById('realtimeBranches').value = config.monitored_branches ? config.monitored_branches.join(', ') : '';
+        document.getElementById('realtimeCheckInterval').value = config.check_interval;
+        document.getElementById('realtimeAutoReview').checked = config.auto_review;
+        document.getElementById('realtimeNotifyOnNewCommit').checked = config.notify_on_new_commit;
+        document.getElementById('realtimeNotifyLevel').value = config.notify_level;
+    } else {
+        // 重置表单为默认值
+        document.getElementById('realtimeIsActive').checked = false;
+        document.getElementById('realtimeBranches').value = '';
+        document.getElementById('realtimeCheckInterval').value = 60;
+        document.getElementById('realtimeAutoReview').checked = true;
+        document.getElementById('realtimeNotifyOnNewCommit').checked = true;
+        document.getElementById('realtimeNotifyLevel').value = 'MEDIUM';
+    }
+    const modal = new bootstrap.Modal(document.getElementById('realtimeConfigModal'));
+    modal.show();
+}
+
+// 保存实时监控配置
+function saveRealtimeConfig() {
+    const config = window.realtimeConfigData || null;
+    const data = {
+        repository: {{ repository.id }},
+        is_active: document.getElementById('realtimeIsActive').checked,
+        monitored_branches: document.getElementById('realtimeBranches').value.split(',').map(b => b.trim()).filter(b => b),
+        check_interval: parseInt(document.getElementById('realtimeCheckInterval').value),
+        auto_review: document.getElementById('realtimeAutoReview').checked,
+        notify_on_new_commit: document.getElementById('realtimeNotifyOnNewCommit').checked,
+        notify_level: document.getElementById('realtimeNotifyLevel').value
+    };
+
+    const url = config && config.id
+        ? `/api/v1/code-review/realtime-configs/${config.id}/`
+        : '/api/v1/code-review/realtime-configs/';
+    const method = config && config.id ? 'PUT' : 'POST';
+
+    apiFetch(url, {
+        method: method,
+        body: JSON.stringify(data)
+    }).then(r => r.json()).then(data => {
+        if (data.id || data.code === 0) {
+            alert('实时监控配置已保存');
+            location.reload();
+        } else {
+            alert('保存失败: ' + (data.message || JSON.stringify(data)));
+        }
+    }).catch(err => {
+        alert('错误: ' + err.message);
+    });
+}
+
+// 切换实时监控状态
+function toggleRealtimeMonitor() {
+    const config = window.realtimeConfigData || null;
+    if (!config || !config.id) {
+        alert('请先配置实时监控');
+        return;
+    }
+
+    apiFetch(`/api/v1/code-review/realtime-configs/${config.id}/toggle_active/`, {
+        method: 'POST'
+    }).then(r => r.json()).then(data => {
+        alert(data.message || '状态已更新');
+        location.reload();
+    }).catch(err => {
+        alert('错误: ' + err.message);
+    });
+}
+</script>
+
+<!-- 编辑仓库模态框 -->
+<div class="modal fade" id="editRepoModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">编辑仓库配置</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{% url 'repository_update' repository.id %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">仓库名称</label>
+                            <input type="text" class="form-control" name="name" value="{{ repository.name }}" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">认证方式</label>
+                            <select class="form-select" name="auth_type">
+                                <option value="password" {% if repository.auth_type == 'password' %}selected{% endif %}>用户名密码</option>
+                                <option value="ssh" {% if repository.auth_type == 'ssh' %}selected{% endif %}>SSH Key</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Git地址</label>
+                        <input type="url" class="form-control" name="git_url" value="{{ repository.git_url }}" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">用户名</label>
+                            <input type="text" class="form-control" name="username" value="{{ repository.username }}">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">密码</label>
+                            <input type="password" class="form-control" name="password" placeholder="留空则不修改">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">钉钉WebHook</label>
+                        <input type="url" class="form-control" name="dingtalk_webhook" value="{{ repository.dingtalk_webhook }}" placeholder="https://oapi.dingtalk.com/robot/send?access_token=xxx">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">钉钉密钥</label>
+                        <input type="text" class="form-control" name="dingtalk_secret" value="{{ repository.dingtalk_secret }}" placeholder="SECxxx">
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">高风险阈值</label>
+                            <input type="number" class="form-control" name="high_risk_threshold" value="{{ repository.high_risk_threshold }}" step="0.05" min="0" max="1">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">中风险阈值</label>
+                            <input type="number" class="form-control" name="medium_risk_threshold" value="{{ repository.medium_risk_threshold }}" step="0.05" min="0" max="1">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">评审分支</label>
+                            <input type="text" class="form-control" name="review_branch" value="{{ repository.review_branch }}" placeholder="master" {% if repository.review_all_branches %}disabled{% endif %}>
+                            <small class="text-muted">指定要评审的分支名称</small>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">
+                                <input type="checkbox" name="review_all_branches" {% if repository.review_all_branches %}checked{% endif %} onchange="toggleReviewBranch(this)"> 评审所有分支
+                            </label>
+                            <small class="text-muted d-block">勾选后评审所有分支的提交</small>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">
+                            <input type="checkbox" name="is_active" {% if repository.is_active %}checked{% endif %}> 启用
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 定时评审配置模态框 -->
+<div class="modal fade" id="scheduledConfigModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-clock"></i> 定时评审配置</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="scheduledConfigForm">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">配置名称</label>
+                        <input type="text" class="form-control" id="scheduledName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">描述</label>
+                        <textarea class="form-control" id="scheduledDescription" rows="2"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Cron表达式</label>
+                        <input type="text" class="form-control" id="scheduledCron" placeholder="例如: 0 12 * * * (每天中午12点)" required>
+                        <small class="text-muted">格式: 分 时 日 月 周</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">评审分支</label>
+                        <input type="text" class="form-control" id="scheduledBranches" placeholder="例如: master,develop (用逗号分隔)">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">
+                            <input type="checkbox" id="scheduledReviewAllBranches"> 评审所有分支
+                        </label>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">
+                            <input type="checkbox" id="scheduledNotifyOnComplete" checked> 完成后发送钉钉通知
+                        </label>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">
+                            <input type="checkbox" id="scheduledIsActive" checked> 启用
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="saveScheduledConfig()">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 实时监控配置模态框 -->
+<div class="modal fade" id="realtimeConfigModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-broadcast"></i> 实时监控配置</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="realtimeConfigForm">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">
+                            <input type="checkbox" id="realtimeIsActive"> 启用实时监控
+                        </label>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">监控分支</label>
+                        <input type="text" class="form-control" id="realtimeBranches" placeholder="例如: master,develop (用逗号分隔)">
+                        <small class="text-muted">留空则监控所有分支</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">检查间隔（秒）</label>
+                        <input type="number" class="form-control" id="realtimeCheckInterval" value="60" min="10" max="3600">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">
+                            <input type="checkbox" id="realtimeAutoReview" checked> 自动评审新提交
+                        </label>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">
+                            <input type="checkbox" id="realtimeNotifyOnNewCommit" checked> 新提交时发送钉钉通知
+                        </label>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">通知级别</label>
+                        <select class="form-select" id="realtimeNotifyLevel">
+                            <option value="HIGH">仅高风险</option>
+                            <option value="MEDIUM" selected>中风险及以上</option>
+                            <option value="LOW">所有风险</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="saveRealtimeConfig()">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

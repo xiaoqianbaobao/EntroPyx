@@ -1,0 +1,723 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}AI产品提效工具列表 - 熵减X-AI{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2><i class="bi bi-file-earmark-text"></i> AI产品提效工具列表</h2>
+        <p class="text-muted mb-0">上传PRD文档，AI自动提取结构化内容并进行智能评审</p>
+    </div>
+    <div>
+        <button class="btn btn-danger me-2" id="batchDeleteBtn" style="display: none;" onclick="batchDelete()">
+            <i class="bi bi-trash"></i> 批量删除
+        </button>
+        <button class="btn btn-primary" onclick="showUploadModal()">
+            <i class="bi bi-cloud-upload"></i> 上传PRD文档
+        </button>
+    </div>
+</div>
+
+<!-- 筛选和搜索 -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-1 d-flex align-items-center">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="selectAll" onclick="toggleSelectAll()">
+                    <label class="form-check-label" for="selectAll">全选</label>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select" id="filterStatus" onchange="filterPRDs()">
+                    <option value="">全部状态</option>
+                    <option value="PENDING">待评审</option>
+                    <option value="APPROVED">已通过</option>
+                    <option value="REJECTED">需修改</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select" id="filterFileType" onchange="filterPRDs()">
+                    <option value="">全部类型</option>
+                    <option value="md">Markdown</option>
+                    <option value="pdf">PDF</option>
+                    <option value="word">Word</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <input type="text" class="form-control" id="searchKeyword" placeholder="搜索PRD标题..." onkeyup="filterPRDs()">
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-outline-secondary w-100" onclick="resetFilters()">
+                    <i class="bi bi-arrow-counterclockwise"></i> 重置
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- PRD文档列表 -->
+<div class="row" id="prdList">
+    <!-- PRD卡片将通过JavaScript动态加载 -->
+</div>
+
+<!-- 分页控件 -->
+<div class="d-flex justify-content-between align-items-center mt-4 mb-5" id="paginationControls">
+    <div class="d-flex align-items-center">
+        <span class="me-2">每页显示:</span>
+        <select class="form-select form-select-sm" style="width: 70px;" onchange="changePerPage(this.value)">
+            <option value="10" {% if per_page == 10 %}selected{% endif %}>10</option>
+            <option value="20" {% if per_page == 20 %}selected{% endif %}>20</option>
+            <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+            <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+        </select>
+        <span class="ms-2 text-muted">共 {{ total_count }} 条记录</span>
+    </div>
+
+    {% if prd_reviews.has_other_pages %}
+    <nav aria-label="Page navigation">
+        <ul class="pagination mb-0">
+            {% if prd_reviews.has_previous %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ prd_reviews.previous_page_number }}&per_page={{ per_page }}">
+                    <span aria-hidden="true">&laquo;</span>
+                </a>
+            </li>
+            {% else %}
+            <li class="page-item disabled">
+                <span class="page-link">&laquo;</span>
+            </li>
+            {% endif %}
+            
+            {% for i in prd_reviews.paginator.page_range %}
+                {% if prd_reviews.number == i %}
+                <li class="page-item active">
+                    <span class="page-link">{{ i }}</span>
+                </li>
+                {% elif i > prd_reviews.number|add:'-3' and i < prd_reviews.number|add:'3' %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ i }}&per_page={{ per_page }}">{{ i }}</a>
+                </li>
+                {% endif %}
+            {% endfor %}
+            
+            {% if prd_reviews.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ prd_reviews.next_page_number }}&per_page={{ per_page }}">
+                    <span aria-hidden="true">&raquo;</span>
+                </a>
+            </li>
+            {% else %}
+            <li class="page-item disabled">
+                <span class="page-link">&raquo;</span>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+</div>
+
+<!-- 上传模态框 -->
+<div class="modal fade" id="uploadModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-cloud-upload"></i> 上传PRD文档</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="uploadForm">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label">PRD标题 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="prdTitle" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">PRD描述</label>
+                        <textarea class="form-control" id="prdDescription" rows="2" placeholder="简要描述PRD的内容和目标"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">文档文件 <span class="text-danger">*</span></label>
+                        <div class="border rounded p-4 text-center" id="dropZone">
+                            <input type="file" class="d-none" id="prdFile" accept=".pdf,.doc,.docx,.md,.txt" required>
+                            <i class="bi bi-cloud-upload display-4 text-muted"></i>
+                            <p class="mb-0 mt-2">拖拽文件到此处或点击上传</p>
+                            <small class="text-muted">支持 PDF, Word, Markdown, TXT 格式，最大 10MB</small>
+                        </div>
+                        <div id="fileInfo" class="mt-2 d-none">
+                            <span class="badge bg-info"><i class="bi bi-file-earmark"></i> <span id="fileName"></span></span>
+                            <span class="badge bg-secondary"><span id="fileSize"></span></span>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">关联仓库（可选）</label>
+                        <select class="form-select" id="relatedRepo">
+                            <option value="">不关联</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="uploadPRD()">
+                    <i class="bi bi-upload"></i> 上传
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 评审进度模态框 -->
+<div class="modal fade" id="progressModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-hourglass-split"></i> AI评审进行中</h5>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-3">
+                    <div class="spinner-border text-primary" role="status"></div>
+                </div>
+                <h6 class="text-center" id="progressTitle">正在分析PRD文档...</h6>
+                <div class="progress mt-3">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" id="progressBar" style="width: 0%"></div>
+                </div>
+                <p class="text-muted text-center mt-2 mb-0" id="progressStep">准备中...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.drop-zone {
+    cursor: pointer;
+    transition: all 0.3s;
+}
+.drop-zone:hover {
+    background-color: #f8f9fa;
+    border-color: #0d6efd !important;
+}
+.drop-zone.dragover {
+    background-color: #e7f1ff;
+    border-color: #0d6efd !important;
+}
+.prd-card {
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.prd-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+}
+.score-badge {
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+</style>
+
+<script>
+let selectedFile = null;
+
+// 初始化
+document.addEventListener('DOMContentLoaded', function() {
+    loadPRDs();
+    setupDropZone();
+});
+
+// 设置拖拽上传区域
+function setupDropZone() {
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('prdFile');
+    
+    dropZone.addEventListener('click', () => fileInput.click());
+    
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+    });
+    
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('dragover');
+    });
+    
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length) {
+            handleFileSelect(e.dataTransfer.files[0]);
+        }
+    });
+    
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length) {
+            handleFileSelect(e.target.files[0]);
+        }
+    });
+}
+
+// 处理文件选择
+function handleFileSelect(file) {
+    if (file.size > 10 * 1024 * 1024) {
+        alert('文件大小不能超过10MB');
+        return;
+    }
+    
+    selectedFile = file;
+    document.getElementById('fileInfo').classList.remove('d-none');
+    document.getElementById('fileName').textContent = file.name;
+    document.getElementById('fileSize').textContent = formatFileSize(file.size);
+}
+
+// 格式化文件大小
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+}
+
+// 显示上传模态框
+function showUploadModal() {
+    document.getElementById('uploadForm').reset();
+    selectedFile = null;
+    document.getElementById('fileInfo').classList.add('d-none');
+    new bootstrap.Modal(document.getElementById('uploadModal')).show();
+}
+
+// 上传PRD
+async function uploadPRD() {
+    const title = document.getElementById('prdTitle').value.trim();
+    const description = document.getElementById('prdDescription').value.trim();
+    
+    if (!title) {
+        alert('请输入PRD标题');
+        return;
+    }
+    
+    if (!selectedFile) {
+        alert('请选择PRD文件');
+        return;
+    }
+    
+    // 校验文件格式
+    const validExtensions = ['pdf', 'doc', 'docx', 'md', 'txt'];
+    const fileName = selectedFile.name;
+    const fileExt = fileName.split('.').pop().toLowerCase();
+    
+    if (!validExtensions.includes(fileExt)) {
+        alert(`不支持的文件格式: .${fileExt}。请上传 PDF, Word, Markdown 或 TXT 文件。`);
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('title', title);
+    formData.append('description', description);
+    formData.append('file', selectedFile);
+    
+    const relatedRepo = document.getElementById('relatedRepo').value;
+    if (relatedRepo) {
+        formData.append('related_repository', relatedRepo);
+    }
+    
+    // 显示上传中
+    const submitBtn = document.querySelector('#uploadModal .btn-primary');
+    const originalBtnText = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="spinner-border spinner-border-sm"></i> 上传中...';
+    
+    try {
+        const response = await fetch('/api/v1/prd-review/prd-reviews/', {
+        credentials: 'same-origin',
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.code === 0) {
+            alert('上传成功！');
+            bootstrap.Modal.getInstance(document.getElementById('uploadModal')).hide();
+            loadPRDs();
+        } else {
+            alert('上传失败: ' + result.message);
+        }
+    } catch (error) {
+        alert('上传失败: ' + error.message);
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalBtnText;
+    }
+}
+
+// 轮询评审进度（保留函数以备后用，目前改为手动触发）
+function pollReviewProgress(prdId) {
+    const progressBar = document.getElementById('progressBar');
+    const progressStep = document.getElementById('progressStep');
+    const progressTitle = document.getElementById('progressTitle');
+    
+    const steps = [
+        { progress: 20, text: '正在读取文档内容...' },
+        { progress: 40, text: '正在提取结构化信息...' },
+        { progress: 60, text: 'AI正在分析完整性...' },
+        { progress: 80, text: 'AI正在识别风险点...' },
+        { progress: 100, text: '评审完成！' }
+    ];
+    
+    let stepIndex = 0;
+    
+    const interval = setInterval(() => {
+        if (stepIndex < steps.length) {
+            const step = steps[stepIndex];
+            progressBar.style.width = step.progress + '%';
+            progressBar.textContent = step.progress + '%';
+            progressStep.textContent = step.text;
+            stepIndex++;
+        }
+    }, 1000);
+    
+    // 检查评审是否完成
+    const checkInterval = setInterval(async () => {
+        try {
+            const response = await fetch(`/api/v1/prd-review/prd-reviews/${prdId}/`);
+            const result = await response.json();
+            
+            if (result.data.overall_score > 0) {
+                // 评审完成
+                clearInterval(interval);
+                clearInterval(checkInterval);
+                
+                progressBar.style.width = '100%';
+                progressBar.textContent = '100%';
+                progressStep.textContent = '评审完成！';
+                
+                setTimeout(() => {
+                    bootstrap.Modal.getInstance(document.getElementById('progressModal')).hide();
+                    bootstrap.Modal.getInstance(document.getElementById('uploadModal')).hide();
+                    loadPRDs();
+                }, 1000);
+            }
+        } catch (error) {
+            console.error('检查评审进度失败:', error);
+        }
+    }, 2000);
+    
+    // 超时处理
+    setTimeout(() => {
+        clearInterval(interval);
+        clearInterval(checkInterval);
+        bootstrap.Modal.getInstance(document.getElementById('progressModal')).hide();
+        loadPRDs();
+    }, 60000);
+}
+
+// 加载PRD列表
+async function loadPRDs() {
+    try {
+        const response = await fetch('/api/v1/prd-review/prd-reviews/', {
+        credentials: 'same-origin'
+    });
+        
+        const result = await response.json();
+        console.log('API Response:', result);
+        
+        // 处理分页响应格式
+        let prds = [];
+        if (result.code === 0) {
+            prds = result.data;
+        } else if (result.results) {
+            // 分页格式
+            prds = result.results;
+        } else if (Array.isArray(result)) {
+            // 直接数组格式
+            prds = result;
+        }
+        
+        if (prds.length > 0) {
+            console.log('PRD Data:', prds);
+            renderPRDList(prds);
+        } else {
+            console.error('No PRD data found');
+            renderPRDList([]);
+        }
+    } catch (error) {
+        console.error('加载PRD列表失败:', error);
+    }
+}
+
+// 渲染PRD列表
+function renderPRDList(prds) {
+    const container = document.getElementById('prdList');
+    
+    if (prds.length === 0) {
+        container.innerHTML = `
+            <div class="col-12 text-center py-5">
+                <i class="bi bi-inbox display-4 text-muted"></i>
+                <p class="text-muted mt-3">暂无PRD文档</p>
+                <button class="btn btn-primary" onclick="showUploadModal()">
+                    <i class="bi bi-cloud-upload"></i> 上传第一个PRD
+                </button>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = prds.map(prd => `
+        <div class="col-md-6 col-lg-4 mb-4">
+            <div class="card h-100 prd-card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div class="form-check">
+                            <input class="form-check-input prd-checkbox" type="checkbox" value="${prd.id}" onclick="updateBatchBtn()">
+                        </div>
+                        <span class="badge bg-secondary">${prd.get_file_type_display || prd.file_type || '未知'}</span>
+                        <span class="badge ${getReviewStatusBadgeClass(prd.review_status)}">
+                            ${prd.get_review_status_display || prd.review_status}
+                        </span>
+                    </div>
+                    <h5 class="card-title mb-2 text-truncate" title="${prd.title}">${prd.title}</h5>
+                    <p class="card-text text-muted small">
+                        <i class="bi bi-person"></i> ${prd.created_by_name || prd.created_by}
+                        <span class="ms-2"><i class="bi bi-clock"></i> ${formatDate(prd.created_at)}</span>
+                    </p>
+                    
+                    <div class="row g-2 mb-3">
+                        <div class="col-4 text-center">
+                            <div class="small text-muted">完整性</div>
+                            <div class="score-badge text-primary">${(prd.completeness_score * 10).toFixed(1)}</div>
+                        </div>
+                        <div class="col-4 text-center">
+                            <div class="small text-muted">一致性</div>
+                            <div class="score-badge text-success">${(prd.consistency_score * 10).toFixed(1)}</div>
+                        </div>
+                        <div class="col-4 text-center">
+                            <div class="small text-muted">风险</div>
+                            <div class="score-badge text-warning">${(prd.risk_score * 10).toFixed(1)}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="progress mb-3" style="height: 6px;">
+                        <div class="progress-bar ${getScoreBarClass(prd.overall_score)}" 
+                             style="width: ${prd.overall_score * 100}%"></div>
+                    </div>
+                    
+                    <div class="small text-muted">
+                        <i class="bi bi-list-check"></i> ${prd.requirements?.length || 0} 个需求点
+                        <span class="ms-2"><i class="bi bi-exclamation-triangle"></i> ${prd.issues_found?.length || 0} 个问题</span>
+                    </div>
+                </div>
+                <div class="card-footer bg-transparent d-flex gap-2">
+                    <a href="/prd-review/prd-reviews/${prd.id}/" class="btn btn-sm btn-outline-primary flex-grow-1">
+                        <i class="bi bi-eye"></i> 详情
+                    </a>
+                    ${prd.review_status === 'PENDING' ? `
+                    <button onclick="startReview(${prd.id})" class="btn btn-sm btn-primary flex-grow-1">
+                        <i class="bi bi-robot"></i> 评审
+                    </button>
+                    ` : ''}
+                    <a href="/prd-review/prd-reviews/${prd.id}/edit/" class="btn btn-sm btn-outline-secondary flex-grow-1">
+                        <i class="bi bi-pencil"></i> 编辑
+                    </a>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// 开始AI评审
+async function startReview(prdId) {
+    if (!confirm('确定要开始AI评审吗？这可能需要几分钟时间。')) {
+        return;
+    }
+    
+    // 显示进度模态框
+    const progressModal = new bootstrap.Modal(document.getElementById('progressModal'));
+    progressModal.show();
+    
+    try {
+        const response = await fetch(`/api/v1/prd-review/prd-reviews/${prdId}/review/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken'),
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.code === 0 || response.ok) {
+            // 开始轮询评审进度
+            pollReviewProgress(prdId);
+        } else {
+            alert('启动评审失败: ' + (result.message || '未知错误'));
+            progressModal.hide();
+        }
+    } catch (error) {
+        alert('启动评审失败: ' + error.message);
+        progressModal.hide();
+    }
+}
+
+// 筛选PRD
+function filterPRDs() {
+    // 实现筛选逻辑
+    loadPRDs();
+}
+
+// 重置筛选
+function resetFilters() {
+    document.getElementById('filterStatus').value = '';
+    document.getElementById('filterFileType').value = '';
+    document.getElementById('searchKeyword').value = '';
+    loadPRDs();
+}
+
+// 辅助函数
+function getReviewStatusBadgeClass(status) {
+    const classes = {
+        'PENDING': 'bg-warning',
+        'APPROVED': 'bg-success',
+        'REJECTED': 'bg-danger'
+    };
+    return classes[status] || 'bg-secondary';
+}
+
+function getScoreBarClass(score) {
+    if (score >= 0.8) return 'bg-success';
+    if (score >= 0.6) return 'bg-warning';
+    return 'bg-danger';
+}
+
+function formatDate(dateStr) {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('zh-CN');
+}
+
+// 改变每页显示条数
+function changePerPage(perPage) {
+    const urlParams = new URLSearchParams(window.location.search);
+    urlParams.set('per_page', perPage);
+    urlParams.set('page', 1); // 切换条数时重置到第一页
+    window.location.search = urlParams.toString();
+}
+
+// 全选/取消全选
+function toggleSelectAll() {
+    const selectAll = document.getElementById('selectAll');
+    const checkboxes = document.querySelectorAll('.prd-checkbox');
+    checkboxes.forEach(cb => cb.checked = selectAll.checked);
+    updateBatchBtn();
+}
+
+// 更新批量操作按钮
+function updateBatchBtn() {
+    const selected = document.querySelectorAll('.prd-checkbox:checked');
+    const btn = document.getElementById('batchDeleteBtn');
+    if (selected.length > 0) {
+        btn.style.display = 'inline-block';
+    } else {
+        btn.style.display = 'none';
+    }
+}
+
+// 批量删除
+function batchDelete() {
+    const selected = document.querySelectorAll('.prd-checkbox:checked');
+    if (selected.length === 0) return;
+    
+    const ids = Array.from(selected).map(cb => cb.value);
+    
+    if (!confirm(`确定要删除选中的 ${ids.length} 个文档吗？`)) {
+        return;
+    }
+    
+    fetch('/api/v1/prd-review/prd-reviews/batch_delete/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({ ids: ids })
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.code === 0) {
+            alert('删除成功');
+            loadPRDs(); // 重新加载列表
+        } else {
+            alert('删除失败: ' + result.message);
+        }
+    })
+    .catch(error => {
+        alert('删除请求失败: ' + error.message);
+    });
+}
+
+// 获取CSRF Token
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+</script>
+
+<!-- 正在努力开发中的工具 -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-tools"></i> 正在努力开发中...</h5>
+                <div class="row mt-3">
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-light border">
+                            <div class="card-body text-center">
+                                <i class="bi bi-file-text" style="font-size: 2rem; color: #6c757d;"></i>
+                                <h6 class="mt-2">会议纪要分析</h6>
+                                <small class="text-muted">智能提取会议要点</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-light border">
+                            <div class="card-body text-center">
+                                <i class="bi bi-folder" style="font-size: 2rem; color: #6c757d;"></i>
+                                <h6 class="mt-2">历史业务文档理解分析</h6>
+                                <small class="text-muted">智能分析历史文档</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-light border">
+                            <div class="card-body text-center">
+                                <i class="bi bi-magic" style="font-size: 2rem; color: #6c757d;"></i>
+                                <h6 class="mt-2">PRD文档自动化生成</h6>
+                                <small class="text-muted">AI自动生成PRD文档</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-light border">
+                            <div class="card-body text-center">
+                                <i class="bi bi-check-circle" style="font-size: 2rem; color: #6c757d;"></i>
+                                <h6 class="mt-2">PRD文档评审</h6>
+                                <small class="text-muted">自动生成验收标准</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

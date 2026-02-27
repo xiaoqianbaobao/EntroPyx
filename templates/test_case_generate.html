@@ -1,0 +1,276 @@
+{% extends 'base.html' %}
+
+{% block title %}AI生成测试用例 - 熵减X-AI{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-magic"></i> AI生成测试用例</h2>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">基于PRD生成</h5>
+            </div>
+            <div class="card-body">
+                <form id="prd-form">
+                    <div class="mb-3">
+                        <label class="form-label">选择PRD评审</label>
+                        <select class="form-select" id="prd-select" name="prd_review_id">
+                            <option value="">请选择PRD评审...</option>
+                            {% for prd in prd_reviews %}
+                            <option value="{{ prd.id }}">{{ prd.title }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-magic"></i> 生成测试用例
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">基于代码评审生成</h5>
+            </div>
+            <div class="card-body">
+                <form id="code-form">
+                    <div class="mb-3">
+                        <label class="form-label">选择代码评审</label>
+                        <select class="form-select" id="code-select" name="code_review_id">
+                            <option value="">请选择代码评审...</option>
+                            {% for review in code_reviews %}
+                            <option value="{{ review.id }}">
+                                {{ review.repository.name }} - {{ review.branch }} - {{ review.commit_hash|slice:":8" }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-magic"></i> 生成测试用例
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="progress-area" class="mt-4" style="display: none;">
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="bi bi-hourglass-split"></i> 生成进度</h5>
+        </div>
+        <div class="card-body">
+            <div class="mb-3">
+                <div class="d-flex justify-content-between mb-2">
+                    <span id="status-text" class="text-primary">准备中...</span>
+                    <span id="progress-text">0%</span>
+                </div>
+                <div class="progress" style="height: 25px;">
+                    <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                         role="progressbar" style="width: 0%">0%</div>
+                </div>
+            </div>
+            <div id="step-info" class="text-muted mb-3"></div>
+            <div id="case-count" class="text-info"></div>
+        </div>
+    </div>
+</div>
+
+<div id="result-area" class="mt-4" style="display: none;">
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">生成结果</h5>
+        </div>
+        <div class="card-body">
+            <div id="result-content"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+let pollingInterval = null;
+
+document.getElementById('prd-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const prdId = document.getElementById('prd-select').value;
+    if (!prdId) {
+        alert('请选择PRD评审');
+        return;
+    }
+    
+    fetch('/api/v1/test-case/generate/', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({
+            prd_review_id: parseInt(prdId)
+        })
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.code === 0) {
+            startPolling(result.data.task_id);
+        } else {
+            alert('生成失败: ' + result.message);
+        }
+    })
+    .catch(error => {
+        alert('请求失败: ' + error);
+    });
+});
+
+document.getElementById('code-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const codeId = document.getElementById('code-select').value;
+    if (!codeId) {
+        alert('请选择代码评审');
+        return;
+    }
+    
+    fetch('/api/v1/test-case/generate/', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({
+            code_review_id: parseInt(codeId)
+        })
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.code === 0) {
+            startPolling(result.data.task_id);
+        } else {
+            alert('生成失败: ' + result.message);
+        }
+    })
+    .catch(error => {
+        alert('请求失败: ' + error);
+    });
+});
+
+function startPolling(taskId) {
+    // 显示进度区域
+    document.getElementById('progress-area').style.display = 'block';
+    document.getElementById('result-area').style.display = 'none';
+    
+    // 清除之前的轮询
+    if (pollingInterval) {
+        clearInterval(pollingInterval);
+    }
+    
+    // 立即查询一次
+    pollTaskStatus(taskId);
+    
+    // 每2秒轮询一次
+    pollingInterval = setInterval(() => {
+        pollTaskStatus(taskId);
+    }, 2000);
+}
+
+function pollTaskStatus(taskId) {
+    fetch(`/api/v1/test-case/generate/?task_id=${taskId}`)
+        .then(response => response.json())
+        .then(result => {
+            if (result.code === 0) {
+                updateProgress(result.data);
+                
+                // 如果任务完成或失败，停止轮询
+                if (result.data.status === 'COMPLETED' || result.data.status === 'FAILED') {
+                    clearInterval(pollingInterval);
+                    pollingInterval = null;
+                    
+                    setTimeout(() => {
+                        document.getElementById('progress-area').style.display = 'none';
+                        if (result.data.status === 'COMPLETED') {
+                            showResult(`成功生成 ${result.data.total_cases} 个测试用例！`);
+                        } else {
+                            showResult(`生成失败: ${result.data.error_message}`, 'danger');
+                        }
+                    }, 2000);
+                }
+            }
+        })
+        .catch(error => {
+            console.error('轮询失败:', error);
+        });
+}
+
+function updateProgress(data) {
+    const progressBar = document.getElementById('progress-bar');
+    const progressText = document.getElementById('progress-text');
+    const statusText = document.getElementById('status-text');
+    const stepInfo = document.getElementById('step-info');
+    const caseCount = document.getElementById('case-count');
+    
+    // 更新进度条
+    progressBar.style.width = `${data.progress}%`;
+    progressBar.textContent = `${data.progress}%`;
+    progressText.textContent = `${data.progress}%`;
+    
+    // 更新状态文本
+    const statusMap = {
+        'PENDING': '等待中',
+        'ANALYZING': '分析中',
+        'AI_GENERATING': 'AI生成中',
+        'PARSING': '解析结果中',
+        'SAVING': '保存用例中',
+        'COMPLETED': '已完成',
+        'FAILED': '失败'
+    };
+    statusText.textContent = statusMap[data.status] || data.status;
+    
+    // 更新步骤信息
+    stepInfo.textContent = data.current_step || '';
+    
+    // 更新用例数量
+    if (data.total_cases > 0) {
+        caseCount.textContent = `已生成 ${data.generated_cases} / ${data.total_cases} 个测试用例`;
+    }
+    
+    // 根据状态设置进度条颜色
+    progressBar.className = 'progress-bar progress-bar-striped progress-bar-animated';
+    if (data.status === 'FAILED') {
+        progressBar.classList.add('bg-danger');
+    } else if (data.status === 'COMPLETED') {
+        progressBar.classList.add('bg-success');
+    } else if (data.status === 'AI_GENERATING') {
+        progressBar.classList.add('bg-info');
+    } else {
+        progressBar.classList.add('bg-primary');
+    }
+}
+
+function showResult(message, type = 'success') {
+    const resultArea = document.getElementById('result-area');
+    const resultContent = document.getElementById('result-content');
+    resultArea.style.display = 'block';
+    resultContent.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+</script>
+{% endblock %}

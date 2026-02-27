@@ -1,0 +1,300 @@
+{% extends "base.html" %}
+
+{% block title %}{{ summary.title }} - 熵减X-AI{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="bi bi-file-text"></i> {{ summary.title }}</h2>
+                <div>
+                    <a href="{% url 'meeting_assistant:meeting_detail' summary.recording.id %}" 
+                       class="btn btn-outline-secondary">
+                        <i class="bi bi-arrow-left"></i> 返回会议详情
+                    </a>
+                </div>
+            </div>
+            
+            <!-- 导出按钮 -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="mb-3">导出文档</h5>
+                    <div class="btn-group">
+                        <button class="btn btn-outline-primary" onclick="exportDocument('markdown')">
+                            <i class="bi bi-file-code"></i> Markdown
+                        </button>
+                        <button class="btn btn-outline-danger" onclick="exportDocument('pdf')">
+                            <i class="bi bi-file-pdf"></i> PDF
+                        </button>
+                        <button class="btn btn-outline-success" onclick="exportDocument('docx')">
+                            <i class="bi bi-file-word"></i> Word
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 会议纪要内容 -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">会议纪要</h5>
+                </div>
+                <div class="card-body">
+                    <!-- 基本信息 -->
+                    <section>
+                        <h6>基本信息</h6>
+                        <table class="table table-bordered">
+                            <tr>
+                                <td width="20%"><strong>仓库</strong></td>
+                                <td>{{ summary.repository.name }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>会议时间</strong></td>
+                                <td>{{ summary.recording.meeting_date|date:"Y-m-d H:i" }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>参会人员</strong></td>
+                                <td>{{ summary.recording.participants }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>生成时间</strong></td>
+                                <td>{{ summary.generated_at|date:"Y-m-d H:i" }}</td>
+                            </tr>
+                        </table>
+                    </section>
+                    
+                    <!-- 会议摘要 -->
+                    <section class="mt-4">
+                        <h6>会议摘要</h6>
+                        <p>{{ summary.summary_text }}</p>
+                    </section>
+                    
+                    <!-- 讨论要点 -->
+                    <section class="mt-4">
+                        <h6>讨论要点</h6>
+                        <ul>
+                            {% for point in summary.key_points %}
+                            <li>{{ point }}</li>
+                            {% endfor %}
+                        </ul>
+                    </section>
+                    
+                    <!-- 决策事项 -->
+                    {% if summary.decisions %}
+                    <section class="mt-4">
+                        <h6>决策事项</h6>
+                        <ul>
+                            {% for decision in summary.decisions %}
+                            <li>✅ {{ decision }}</li>
+                            {% endfor %}
+                        </ul>
+                    </section>
+                    {% endif %}
+                    
+                    <!-- 待办任务 -->
+                    {% if summary.action_items %}
+                    <section class="mt-4">
+                        <h6>待办任务</h6>
+                        <table class="table table-bordered">
+                            <thead>
+                                <tr>
+                                    <th>任务</th>
+                                    <th>负责人</th>
+                                    <th>截止时间</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in summary.action_items %}
+                                <tr>
+                                    <td>{{ item.task }}</td>
+                                    <td>{{ item.assignee }}</td>
+                                    <td>{{ item.deadline }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </section>
+                    {% endif %}
+                    
+                    <!-- 评审意见 -->
+                    {% if summary.opinions.all %}
+                    <section class="mt-4">
+                        <h6>评审意见</h6>
+                        <div class="list-group">
+                            {% for opinion in summary.opinions.all %}
+                            <div class="list-group-item">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <span class="badge bg-{{ opinion.priority }}">{{ opinion.get_priority_display }}</span>
+                                        <span class="badge opinion-badge-{{ opinion.opinion_type }}">
+                                            {{ opinion.get_opinion_type_display }}
+                                        </span>
+                                        <span class="ms-2">{{ opinion.content }}</span>
+                                    </div>
+                                    <div>
+                                        {% if opinion.is_resolved %}
+                                            <span class="badge bg-success">已解决</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">待解决</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </section>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- 完整转写文本 -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">完整转写文本</h5>
+                </div>
+                <div class="card-body">
+                    <div class="transcript-container">
+                        {% for transcript in summary.transcripts.all %}
+                        <div class="transcript-item">
+                            <div class="transcript-header">
+                                <span class="speaker-badge">{{ transcript.speaker }}</span>
+                                <span class="timestamp">{{ transcript.start_time }}s - {{ transcript.end_time }}s</span>
+                            </div>
+                            <div class="transcript-content">
+                                {{ transcript.content }}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.transcript-container {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.transcript-item {
+    padding: 10px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.transcript-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 5px;
+}
+
+.speaker-badge {
+    background-color: #007bff;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+}
+
+.timestamp {
+    color: #6c757d;
+    font-size: 12px;
+}
+
+.transcript-content {
+    padding-left: 10px;
+}
+
+.opinion-badge-issue {
+    background-color: #dc3545;
+    color: white;
+}
+
+.opinion-badge-suggestion {
+    background-color: #ffc107;
+    color: black;
+}
+
+.opinion-badge-decision {
+    background-color: #28a745;
+    color: white;
+}
+
+.opinion-badge-risk {
+    background-color: #fd7e14;
+    color: white;
+}
+
+.opinion-badge-positive {
+    background-color: #0dcaf0;
+    color: white;
+}
+</style>
+
+<script>
+function exportDocument(format) {
+    const summaryId = {{ summary.id }};
+    const btn = event.target;
+    
+    // 禁用按钮并显示加载状态
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 生成中...';
+    
+    // 检查文件是否已存在
+    fetch(`/meeting-assistant/api/summaries/${summaryId}/export/?format=${format}`, {
+        method: 'GET',
+        headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.task_id) {
+            // 异步生成中，提示用户稍后查看
+            alert(`${format.toUpperCase()}文档正在生成中，请稍后刷新页面查看`);
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        } else if (data.file_path) {
+            // 文件已存在，直接下载
+            window.location.href = `/meeting-assistant/api/summaries/${summaryId}/export/?format=${format}`;
+        }
+    })
+    .catch(error => {
+        console.error('导出失败:', error);
+        alert('导出失败: ' + error.message);
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    });
+}
+
+// 检查导出任务状态
+function checkExportStatus() {
+    const summaryId = {{ summary.id }};
+    const format = 'markdown'; // 默认检查markdown格式
+    
+    fetch(`/meeting-assistant/api/summaries/${summaryId}/export/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        body: JSON.stringify({ format: format })
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log('导出状态:', data);
+    })
+    .catch(error => {
+        console.error('检查状态失败:', error);
+    });
+}
+
+// 页面加载完成后检查状态
+document.addEventListener('DOMContentLoaded', function() {
+    // 每30秒检查一次导出状态
+    setInterval(checkExportStatus, 30000);
+});
+</script>
+{% endblock %}

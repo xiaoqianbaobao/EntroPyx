@@ -1,0 +1,211 @@
+{% extends 'base.html' %}
+
+{% block title %}平台管理 - 天枢效能平台{% endblock %}
+
+{% block extra_js %}
+<script>
+function togglePasswordVisibility(id) {
+    const input = document.getElementById(id);
+    const icon = input.nextElementSibling.querySelector('i');
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.classList.replace('bi-eye', 'bi-eye-slash');
+    } else {
+        input.type = 'password';
+        icon.classList.replace('bi-eye-slash', 'bi-eye');
+    }
+}
+
+function saveLLMConfig() {
+    const form = document.getElementById('llmConfigForm');
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData.entries());
+    
+    // 显示保存中状态
+    const btn = form.querySelector('button');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 保存中...';
+    
+    fetch("{% url 'platform_management:update_llm_config' %}", {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.code === 0) {
+            alert('配置保存成功！');
+        } else {
+            alert('保存失败: ' + result.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('请求失败，请检查网络连接');
+    })
+    .finally(() => {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    });
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-gear-wide-connected"></i> 平台管理</h2>
+</div>
+
+<div class="row">
+    <!-- 智能体管理 -->
+    <div class="col-md-4 mb-4">
+        <div class="card h-100 border-primary">
+            <div class="card-body text-center">
+                <div class="display-4 text-primary mb-3"><i class="bi bi-robot"></i></div>
+                <h4 class="card-title">智能体管理</h4>
+                <p class="card-text text-muted">创建、配置和维护您的AI智能体，定制化您的专属助手。</p>
+                <div class="mt-4">
+                    <h2 class="mb-0">{{ agent_count }}</h2>
+                    <small class="text-muted">活跃智能体</small>
+                </div>
+            </div>
+            <div class="card-footer bg-transparent border-top-0 pb-4 text-center">
+                <a href="{% url 'platform_management:agent_list' %}" class="btn btn-outline-primary stretched-link">管理智能体</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- 工作流编排 -->
+    <div class="col-md-4 mb-4">
+        <div class="card h-100 border-success">
+            <div class="card-body text-center">
+                <div class="display-4 text-success mb-3"><i class="bi bi-diagram-3"></i></div>
+                <h4 class="card-title">工作流编排</h4>
+                <p class="card-text text-muted">通过可视化的方式编排复杂的业务流程，实现多智能体协作。</p>
+                <div class="mt-4">
+                    <h2 class="mb-0">{{ workflow_count }}</h2>
+                    <small class="text-muted">已编排流程</small>
+                </div>
+            </div>
+            <div class="card-footer bg-transparent border-top-0 pb-4 text-center">
+                <a href="{% url 'platform_management:workflow_list' %}" class="btn btn-outline-success stretched-link">编排工作流</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- 知识库管理 -->
+    <div class="col-md-4 mb-4">
+        <div class="card h-100 border-info">
+            <div class="card-body text-center">
+                <div class="display-4 text-info mb-3"><i class="bi bi-database"></i></div>
+                <h4 class="card-title">知识库管理</h4>
+                <p class="card-text text-muted">上传和管理您的私有数据，为智能体提供强大的知识支撑。</p>
+                <div class="mt-4">
+                    <h2 class="mb-0">{{ knowledge_count }}</h2>
+                    <small class="text-muted">文档数量</small>
+                </div>
+            </div>
+            <div class="card-footer bg-transparent border-top-0 pb-4 text-center">
+                <a href="{% url 'platform_management:knowledge_base' %}" class="btn btn-outline-info stretched-link">管理知识库</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 大模型配置 -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card border-warning">
+            <div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-cpu"></i> 大模型配置</h5>
+                <small>配置全局使用的 LLM 服务</small>
+            </div>
+            <div class="card-body">
+                <form id="llmConfigForm">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label for="apiBase" class="form-label">API 地址 (Base URL)</label>
+                            <input type="text" class="form-control" id="apiBase" name="api_base" value="{{ llm_config.api_base|default:'https://api.deepseek.com/v1' }}" placeholder="例如: https://api.deepseek.com/v1" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="apiKey" class="form-label">API 密钥 (API Key)</label>
+                            <div class="input-group">
+                                <input type="password" class="form-control" id="apiKey" name="api_key" value="{{ llm_config.api_key|default:'' }}" placeholder="sk-..." required>
+                                <button class="btn btn-outline-secondary" type="button" onclick="togglePasswordVisibility('apiKey')">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="modelName" class="form-label">模型名称</label>
+                            <input type="text" class="form-control" id="modelName" name="model_name" value="{{ llm_config.model_name|default:'deepseek-chat' }}" placeholder="例如: deepseek-chat" required>
+                        </div>
+                        <div class="col-md-1 d-flex align-items-end">
+                            <button type="button" class="btn btn-primary w-100" onclick="saveLLMConfig()">
+                                <i class="bi bi-save"></i> 保存
+                            </button>
+                        </div>
+                    </div>
+                    <div class="form-text mt-2 text-muted">
+                        <i class="bi bi-info-circle"></i> 此配置将应用于所有 AI 功能（代码评审、PRD分析、智能对话等）。请确保 API 地址兼容 OpenAI 格式。
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-activity"></i> 平台动态</h5>
+            </div>
+            <div class="card-body">
+                <div class="list-group list-group-flush">
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge bg-primary me-2">智能体</span>
+                            <strong>代码评审专家</strong> 完成了一次评审任务
+                        </div>
+                        <small class="text-muted">10分钟前</small>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge bg-success me-2">工作流</span>
+                            <strong>自动化发布流程</strong> 执行成功
+                        </div>
+                        <small class="text-muted">1小时前</small>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge bg-info me-2">知识库</span>
+                            新文档 <strong>API接口规范_v2.0.pdf</strong> 已入库
+                        </div>
+                        <small class="text-muted">2小时前</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

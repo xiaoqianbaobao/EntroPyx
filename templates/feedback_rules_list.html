@@ -1,0 +1,186 @@
+{% extends 'base.html' %}
+
+{% block title %}反馈规则 - 熵减X-AI{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-chat-dots"></i> 反馈优化规则</h2>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addRuleModal">
+        <i class="bi bi-plus"></i> 添加规则
+    </button>
+</div>
+
+<!-- 统计卡片 -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title">总反馈数</h5>
+                <h2 class="text-primary" id="totalFeedback">-</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title">准确率</h5>
+                <h2 class="text-success" id="accuracyRate">-</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title">误报数</h5>
+                <h2 class="text-warning" id="falsePositive">-</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title">漏报数</h5>
+                <h2 class="text-danger" id="missed">-</h2>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 规则列表 -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">规则列表 ({{ rules|length }})</h5>
+    </div>
+    <div class="card-body">
+        {% if rules %}
+        <div class="list-group list-group-flush">
+            {% for rule in rules %}
+            <div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <span class="badge {% if rule.rule_type == 'WHITELIST' %}bg-success{% else %}bg-danger{% endif %}">
+                            {{ rule.get_rule_type_display }}
+                        </span>
+                        <code class="ms-2">{{ rule.pattern }}</code>
+                        {% if rule.description %}
+                        <span class="ms-2 text-muted">{{ rule.description }}</span>
+                        {% endif %}
+                    </div>
+                    <div>
+                        {% if rule.is_active %}
+                        <span class="badge bg-success">启用</span>
+                        {% else %}
+                        <span class="badge bg-secondary">禁用</span>
+                        {% endif %}
+                        <button class="btn btn-sm btn-outline-danger ms-2" onclick="deleteRule({{ rule.id }})">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                <small class="text-muted">
+                    创建人: {{ rule.created_by.username }} | 创建时间: {{ rule.created_at|date:"Y-m-d H:i" }}
+                </small>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-4">暂无规则</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 添加规则模态框 -->
+<div class="modal fade" id="addRuleModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">添加规则</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="addRuleForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">规则类型</label>
+                        <select class="form-select" name="rule_type" required>
+                            <option value="WHITELIST">白名单(忽略)</option>
+                            <option value="BLACKLIST">黑名单(重点)</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">匹配模式</label>
+                        <input type="text" class="form-control" name="pattern" placeholder="如: **/test/**" required>
+                        <small class="text-muted">支持glob模式,如 **/test/** 或 *.md</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">描述</label>
+                        <input type="text" class="form-control" name="description" placeholder="规则的描述说明">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">
+                            <input type="checkbox" name="is_active" checked> 启用
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// 加载统计数据
+function loadStats() {
+    fetch('/api/v1/feedback/feedback-rules/statistics/')
+        .then(r => r.json())
+        .then(data => {
+            if (data.code === 0) {
+                const stats = data.data;
+                document.getElementById('totalFeedback').textContent = stats.total_feedback;
+                document.getElementById('accuracyRate').textContent = stats.accuracy_rate + '%';
+                document.getElementById('falsePositive').textContent = stats.false_positive_count;
+                document.getElementById('missed').textContent = stats.missed_count;
+            }
+        });
+}
+
+// 添加规则
+document.getElementById('addRuleForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    const data = Object.fromEntries(formData);
+    
+    fetch('/api/v1/feedback/feedback-rules/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    }).then(r => r.json()).then(res => {
+        if (res.code === 0) {
+            location.reload();
+        } else {
+            alert('添加失败: ' + (res.message || '未知错误'));
+        }
+    });
+});
+
+// 删除规则
+function deleteRule(id) {
+    if (confirm('确定要删除这个规则吗？')) {
+        fetch(`/api/v1/feedback/feedback-rules/${id}/`, {
+            method: 'DELETE'
+        }).then(r => r.json()).then(res => {
+            if (res.code === 0) {
+                location.reload();
+            } else {
+                alert('删除失败: ' + (res.message || '未知错误'));
+            }
+        });
+    }
+}
+
+// 页面加载时获取统计
+loadStats();
+</script>
+{% endblock %}

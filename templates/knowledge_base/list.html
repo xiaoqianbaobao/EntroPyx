@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+
+{% block title %}知识库管理 - 熵减X-AI{% endblock %}
+
+{% block extra_css %}
+<style>
+.knowledge-card {
+    transition: all 0.3s ease;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.knowledge-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    border-color: #007bff;
+}
+
+.file-icon {
+    font-size: 48px;
+    color: #6c757d;
+}
+
+.status-badge {
+    font-size: 0.75rem;
+}
+
+.file-info {
+    font-size: 0.875rem;
+    color: #6c757d;
+}
+
+.action-btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="bi bi-book"></i> 知识库管理</h2>
+                <div>
+                    <a href="{% url 'knowledge_base:upload' %}" class="btn btn-primary">
+                        <i class="bi bi-upload"></i> 上传文档
+                    </a>
+                    <a href="{% url 'knowledge_base:chat' %}" class="btn btn-success">
+                        <i class="bi bi-chat"></i> 智能问答
+                    </a>
+                </div>
+            </div>
+            
+            <!-- 统计信息 -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h5 class="card-title text-primary">{{ documents.count }}</h5>
+                            <p class="card-text">总文档数</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h5 class="card-title text-success">{{ documents|length }}</h5>
+                            <p class="card-text">已处理文档</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h5 class="card-title text-info">{{ documents|length }}</h5>
+                            <p class="card-text">总文档数</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h5 class="card-title text-warning">{{ documents|length }}</h5>
+                            <p class="card-text">总文档数</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 文档列表 -->
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">文档列表</h5>
+                    <div>
+                        <input type="text" class="form-control form-control-sm" id="searchInput" 
+                               placeholder="搜索文档..." style="width: 250px;">
+                    </div>
+                </div>
+                <div class="card-body">
+                    {% if documents %}
+                        <div class="row">
+                            {% for document in documents %}
+                            <div class="col-lg-6 col-xl-4 mb-3">
+                                <div class="knowledge-card card">
+                                    <div class="card-body">
+                                        <div class="d-flex align-items-start">
+                                            <div class="me-3">
+                                                <div class="file-icon">
+                                                    {% if document.file_type == 'pdf' %}
+                                                        <i class="bi bi-file-pdf text-danger"></i>
+                                                    {% elif document.file_type == 'docx' %}
+                                                        <i class="bi bi-file-word text-primary"></i>
+                                                    {% elif document.file_type == 'md' %}
+                                                        <i class="bi bi-file-markdown text-info"></i>
+                                                    {% else %}
+                                                        <i class="bi bi-file-text text-secondary"></i>
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                            <div class="flex-grow-1">
+                                                <h6 class="card-title mb-1">
+                                                    <a href="{% url 'knowledge_base:detail' document.id %}" 
+                                                       class="text-decoration-none">
+                                                        {{ document.title }}
+                                                    </a>
+                                                </h6>
+                                                <p class="card-text text-muted small mb-2">
+                                                    {{ document.content_preview|truncatewords:20 }}
+                                                </p>
+                                                <div class="d-flex justify-content-between align-items-center">
+                                                    <span class="badge status-badge 
+                                                        {% if document.status == 'completed' %}bg-success
+                                                        {% elif document.status == 'processing' %}bg-warning
+                                                        {% else %}bg-secondary{% endif %}">
+                                                        {{ document.get_status_display }}
+                                                    </span>
+                                                    <small class="text-muted">
+                                                        {{ document.file_size|filesizeformat }}
+                                                    </small>
+                                                </div>
+                                                <div class="d-flex justify-content-between align-items-center mt-2">
+                                                    <small class="text-muted">
+                                                        {{ document.created_at|date:"Y-m-d H:i" }}
+                                                    </small>
+                                                    <div class="btn-group btn-group-sm">
+                                                        <a href="{% url 'knowledge_base:detail' document.id %}" 
+                                                           class="btn btn-outline-primary action-btn">
+                                                            <i class="bi bi-eye"></i>
+                                                        </a>
+                                                        <button class="btn btn-outline-danger action-btn" 
+                                                                onclick="deleteDocument({{ document.id }})">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="text-center py-5">
+                            <i class="bi bi-inbox" style="font-size: 48px; color: #6c757d;"></i>
+                            <p class="mt-3">暂无文档，<a href="{% url 'knowledge_base:upload' %}">立即上传</a></p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// 搜索功能
+document.getElementById('searchInput').addEventListener('input', function(e) {
+    const searchTerm = e.target.value.toLowerCase();
+    const cards = document.querySelectorAll('.knowledge-card');
+    
+    cards.forEach(card => {
+        const title = card.querySelector('.card-title').textContent.toLowerCase();
+        const content = card.querySelector('.card-text').textContent.toLowerCase();
+        
+        if (title.includes(searchTerm) || content.includes(searchTerm)) {
+            card.style.display = 'block';
+        } else {
+            card.style.display = 'none';
+        }
+    });
+});
+
+// 删除文档
+function deleteDocument(documentId) {
+    if (confirm('确定要删除这个文档吗？')) {
+        fetch(`/api/v1/knowledge/api/documents/${documentId}/delete/`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                location.reload();
+            } else {
+                alert('删除失败: ' + data.error);
+            }
+        })
+        .catch(error => {
+            alert('删除失败: ' + error.message);
+        });
+    }
+}
+
+// 实时搜索
+let searchTimeout;
+document.getElementById('searchInput').addEventListener('input', function(e) {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        performSearch(e.target.value);
+    }, 300);
+});
+
+function performSearch(query) {
+    fetch(`/api/v1/knowledge/documents/search/?q=${encodeURIComponent(query)}`)
+        .then(response => response.json())
+        .then(data => {
+            console.log('搜索结果:', data);
+        });
+}
+</script>
+{% endblock %}

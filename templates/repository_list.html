@@ -1,0 +1,536 @@
+{% extends 'base.html' %}
+
+{% block title %}仓库管理 - 熵减X-AI{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-git"></i> 仓库管理</h2>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addRepoModal">
+        <i class="bi bi-plus-lg"></i> 新增仓库
+    </button>
+</div>
+
+<!-- 任务进度模态框 -->
+<div class="modal fade" id="taskProgressModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-hourglass-split"></i> 评审任务进度</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="taskProgressContent">
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">正在获取任务状态...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-primary" onclick="refreshTaskProgress()">
+                    <i class="bi bi-arrow-clockwise"></i> 刷新
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 任务列表模态框 -->
+<div class="modal fade" id="taskListModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-list-task"></i> 评审任务历史</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <table class="table table-hover" id="taskListTable">
+                    <thead>
+                        <tr>
+                            <th>仓库</th>
+                            <th>分支</th>
+                            <th>状态</th>
+                            <th>进度</th>
+                            <th>高风险</th>
+                            <th>中风险</th>
+                            <th>低风险</th>
+                            <th>创建时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="taskListBody">
+                        <tr><td colspan="9" class="text-center">正在加载...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>仓库名称</th>
+                    <th>Git地址</th>
+                    <th>钉钉配置</th>
+                    <th>风险阈值</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for repo in repositories %}
+                <tr>
+                    <td><strong>{{ repo.name }}</strong></td>
+                    <td><small class="text-muted">{{ repo.git_url }}</small></td>
+                    <td>
+                        {% if repo.dingtalk_webhook %}
+                        <span class="badge bg-success"><i class="bi bi-check"></i> 已配置</span>
+                        {% else %}
+                        <span class="badge bg-secondary">未配置</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        高: {{ repo.high_risk_threshold }}%<br>
+                        中: {{ repo.medium_risk_threshold }}%
+                    </td>
+                    <td>
+                        {% if repo.is_active %}
+                        <span class="badge bg-success">启用</span>
+                        {% else %}
+                        <span class="badge bg-secondary">停用</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="/repository/{{ repo.id }}/" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-gear"></i> 配置
+                        </a>
+                        <button class="btn btn-sm btn-outline-success" onclick="triggerReview({{ repo.id }}, '{{ repo.name }}', '{{ repo.review_branch|default:"master" }}', {{ repo.review_all_branches|yesno:"true,false" }})">
+                            <i class="bi bi-play"></i> 立即评审
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="mt-3">
+    <button class="btn btn-outline-secondary" onclick="showTaskList()">
+        <i class="bi bi-clock-history"></i> 查看任务历史
+    </button>
+</div>
+
+<!-- 新增仓库模态框 -->
+<div class="modal fade" id="addRepoModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">新增仓库</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{% url 'repository_create' %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">仓库名称</label>
+                            <input type="text" class="form-control" name="name" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">认证方式</label>
+                            <select class="form-select" name="auth_type">
+                                <option value="password">用户名密码</option>
+                                <option value="ssh">SSH Key</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Git地址</label>
+                        <input type="url" class="form-control" name="git_url" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">用户名</label>
+                            <input type="text" class="form-control" name="username">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">密码</label>
+                            <input type="password" class="form-control" name="password">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">钉钉WebHook</label>
+                        <input type="url" class="form-control" name="dingtalk_webhook" placeholder="https://oapi.dingtalk.com/robot/send?access_token=xxx">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">钉钉密钥</label>
+                        <input type="text" class="form-control" name="dingtalk_secret" placeholder="SECxxx">
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">高风险阈值</label>
+                            <input type="number" class="form-control" name="high_risk_threshold" value="0.7" step="0.05" min="0" max="1">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">中风险阈值</label>
+                            <input type="number" class="form-control" name="medium_risk_threshold" value="0.4" step="0.05" min="0" max="1">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentTaskId = null;
+let taskPollingTimer = null;
+let isReviewing = false;  // 防止重复点击
+
+// 获取CSRF Token
+function getCsrfToken() {
+    return document.cookie.split('; ')
+        .find(row => row.startsWith('csrftoken='))
+        ?.split('=')[1] || '';
+}
+
+// API请求统一封装，使用Session认证
+function apiFetch(url, options = {}) {
+    const headers = {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCsrfToken(),
+        ...options.headers
+    };
+    return fetch(url, {
+        ...options,
+        headers,
+        credentials: 'include'  // 发送session cookie
+    });
+}
+
+// 触发评审
+function triggerReview(repoId, repoName, branch, allBranches) {
+    // 防止重复点击
+    if (isReviewing) {
+        alert('评审任务正在进行中，请稍候...');
+        return;
+    }
+
+    if (!confirm(`确定要立即触发仓库 "${repoName}" 的代码评审吗？\n分支: ${allBranches ? '所有分支' : branch}`)) {
+        return;
+    }
+
+    isReviewing = true;
+
+    // 显示进度模态框
+    const modal = new bootstrap.Modal(document.getElementById('taskProgressModal'));
+    document.getElementById('taskProgressContent').innerHTML = `
+        <div class="text-center py-4">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">正在触发评审任务...</p>
+        </div>
+    `;
+    modal.show();
+
+    // 调用API触发评审
+    apiFetch('/api/v1/code-review/reviews/manual_trigger/', {
+        method: 'POST',
+        body: JSON.stringify({
+            repository_id: repoId,
+            branch: branch,
+            all_branches: allBranches
+        })
+    }).then(r => {
+        if (r.status === 403 || r.status === 401) {
+            throw new Error('请先登录后再操作');
+        }
+        if (!r.ok) {
+            throw new Error(`HTTP错误: ${r.status}`);
+        }
+        return r.json();
+    }).then(data => {
+        if (data.code === 0) {
+            currentTaskId = data.data.task_id;
+            // 显示成功消息
+            document.getElementById('taskProgressContent').innerHTML = `
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle"></i> ${data.message || '评审任务已提交'}
+                </div>
+            `;
+            // 开始轮询进度
+            setTimeout(updateTaskProgress, 1000);
+        } else {
+            document.getElementById('taskProgressContent').innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-x-circle"></i> ${data.message || '触发失败'}
+                </div>
+            `;
+            isReviewing = false;
+        }
+    }).catch(err => {
+        document.getElementById('taskProgressContent').innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle"></i> ${err.message}
+            </div>
+        `;
+        isReviewing = false;
+    });
+}
+
+// 更新任务进度
+function updateTaskProgress() {
+    if (!currentTaskId) return;
+
+    apiFetch(`/api/v1/code-review/reviews/task_status/?task_id=${currentTaskId}`)
+        .then(r => {
+            if (r.status === 403 || r.status === 401) {
+                throw new Error('登录已过期，请刷新页面后重新登录');
+            }
+            return r.json();
+        })
+        .then(data => {
+            if (data.code !== 0) {
+                document.getElementById('taskProgressContent').innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="bi bi-x-circle"></i> ${data.message}
+                    </div>
+                `;
+                return;
+            }
+            
+            const task = data.data;
+            const statusColors = {
+                'PENDING': 'secondary',
+                'RUNNING': 'primary',
+                'CLONING': 'info',
+                'FETCHING': 'info',
+                'DIFFING': 'info',
+                'REVIEWING': 'warning',
+                'SAVING': 'info',
+                'NOTIFYING': 'info',
+                'COMPLETED': 'success',
+                'FAILED': 'danger'
+            };
+            
+            const html = `
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="card-title mb-0">
+                                <i class="bi bi-git"></i> ${task.repository_name} / ${task.branch}
+                            </h5>
+                            <span class="badge bg-${statusColors[task.status]}">${task.status_display}</span>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between mb-1">
+                                <span>进度</span>
+                                <span>${task.progress}%</span>
+                            </div>
+                            <div class="progress" style="height: 20px;">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                     role="progressbar" style="width: ${task.progress}%">
+                                    ${task.processed_commits}/${task.total_commits} 提交
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i> ${task.current_step || '任务执行中...'}
+                        </div>
+                        
+                        <div class="row text-center">
+                            <div class="col-3">
+                                <div class="text-danger h4">${task.high_risk_count}</div>
+                                <small>高风险</small>
+                            </div>
+                            <div class="col-3">
+                                <div class="text-warning h4">${task.medium_risk_count}</div>
+                                <small>中风险</small>
+                            </div>
+                            <div class="col-3">
+                                <div class="text-success h4">${task.low_risk_count}</div>
+                                <small>低风险</small>
+                            </div>
+                            <div class="col-3">
+                                <div class="text-primary h4">${task.dingtalk_notified_count}</div>
+                                <small>钉钉通知</small>
+                            </div>
+                        </div>
+                        
+                        ${task.error_message ? `
+                            <div class="alert alert-danger mt-3">
+                                <i class="bi bi-exclamation-triangle"></i>
+                                <strong>错误:</strong> ${task.error_message}
+                            </div>
+                        ` : ''}
+                        
+                        ${task.duration_seconds ? `
+                            <div class="text-muted mt-2 text-end">
+                                <small>耗时: ${task.duration_seconds}秒</small>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('taskProgressContent').innerHTML = html;
+            
+            // 如果任务未完成，继续轮询
+            if (!task.is_completed) {
+                taskPollingTimer = setTimeout(updateTaskProgress, 2000);
+            } else {
+                // 任务完成，显示完成信息
+                if (task.status === 'COMPLETED') {
+                    document.getElementById('taskProgressContent').innerHTML += `
+                        <div class="alert alert-success">
+                            <i class="bi bi-check-circle"></i>
+                            <strong>评审完成!</strong>
+                            共评审 ${task.total_commits} 条提交，
+                            发现高风险 ${task.high_risk_count} 条，
+                            ${task.dingtalk_notified_count > 0 ? '已发送钉钉通知' : '无需发送钉钉通知'}。
+                        </div>
+                    `;
+                } else {
+                    document.getElementById('taskProgressContent').innerHTML += `
+                        <div class="alert alert-danger">
+                            <i class="bi bi-x-circle"></i>
+                            <strong>任务失败:</strong> ${task.error_message || '未知错误'}
+                        </div>
+                    `;
+                }
+
+                // 3秒后自动关闭模态框
+                setTimeout(() => {
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('taskProgressModal'));
+                    if (modal) {
+                        modal.hide();
+                    }
+                }, 3000);
+            }
+        })
+        .catch(err => {
+            document.getElementById('taskProgressContent').innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-x-circle"></i> 网络错误: ${err.message}
+                </div>
+            `;
+        });
+}
+
+// 刷新任务进度
+function refreshTaskProgress() {
+    updateTaskProgress();
+}
+
+// 显示任务列表
+function showTaskList() {
+    const modal = new bootstrap.Modal(document.getElementById('taskListModal'));
+    modal.show();
+    loadTaskList();
+}
+
+// 加载任务列表
+function loadTaskList() {
+    apiFetch('/api/v1/code-review/reviews/tasks/')
+        .then(r => {
+            if (r.status === 403 || r.status === 401) {
+                document.getElementById('taskListBody').innerHTML = `
+                    <tr><td colspan="9" class="text-center text-warning">请先登录</td></tr>
+                `;
+                return Promise.reject('未登录');
+            }
+            return r.json();
+        })
+        .then(data => {
+            if (data.code !== 0) {
+                document.getElementById('taskListBody').innerHTML = `
+                    <tr><td colspan="9" class="text-center text-danger">${data.message}</td></tr>
+                `;
+                return;
+            }
+            
+            const statusColors = {
+                'PENDING': 'secondary',
+                'RUNNING': 'primary',
+                'COMPLETED': 'success',
+                'FAILED': 'danger'
+            };
+            
+            if (data.data.length === 0) {
+                document.getElementById('taskListBody').innerHTML = `
+                    <tr><td colspan="9" class="text-center text-muted">暂无任务记录</td></tr>
+                `;
+                return;
+            }
+            
+            document.getElementById('taskListBody').innerHTML = data.data.map(task => `
+                <tr>
+                    <td>${task.repository_name}</td>
+                    <td><code>${task.branch}</code></td>
+                    <td><span class="badge bg-${statusColors[task.status]}">${task.status_display}</span></td>
+                    <td>
+                        <div class="progress" style="width: 100px;">
+                            <div class="progress-bar bg-${task.progress === 100 ? 'success' : 'primary'}" 
+                                 style="width: ${task.progress}%"></div>
+                        </div>
+                        <small>${task.progress}%</small>
+                    </td>
+                    <td><span class="text-danger">${task.high_risk_count}</span></td>
+                    <td><span class="text-warning">${task.medium_risk_count}</span></td>
+                    <td><span class="text-success">${task.low_risk_count}</span></td>
+                    <td>${new Date(task.created_at).toLocaleString()}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary" 
+                                onclick="viewTaskDetail('${task.task_id}')">
+                            查看
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        });
+}
+
+// 查看任务详情
+function viewTaskDetail(taskId) {
+    currentTaskId = taskId;
+    const taskListModal = bootstrap.Modal.getInstance(document.getElementById('taskListModal'));
+    taskListModal.hide();
+    
+    const modal = new bootstrap.Modal(document.getElementById('taskProgressModal'));
+    modal.show();
+    updateTaskProgress();
+}
+
+// 模态框关闭时停止轮询
+document.getElementById('taskProgressModal').addEventListener('hidden.bs.modal', () => {
+    if (taskPollingTimer) {
+        clearTimeout(taskPollingTimer);
+        taskPollingTimer = null;
+    }
+    currentTaskId = null;
+    isReviewing = false;
+});
+
+// 任务列表模态框关闭时处理
+document.getElementById('taskListModal').addEventListener('hidden.bs.modal', () => {
+    // Bootstrap会自动处理aria-hidden，不需要手动干预
+});
+</script>
+{% endblock %}

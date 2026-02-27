@@ -1,0 +1,592 @@
+{% extends 'base.html' %}
+
+{% block title %}AI智能评审 - 熵减X-AI{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-robot"></i> AI智能评审</h2>
+    <button class="btn btn-primary" onclick="createNewSession()">
+        <i class="bi bi-plus-circle"></i> 新建会话
+    </button>
+</div>
+
+<div class="row">
+    <!-- 左侧：会话列表 -->
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">会话列表</h6>
+            </div>
+            <div class="card-body p-0">
+                <div id="session-list" style="max-height: 600px; overflow-y: auto;">
+                    <!-- 会话列表动态加载 -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 右侧：对话区域 -->
+    <div class="col-md-9">
+        <div class="card">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0" id="current-session-title">请选择或创建会话</h6>
+                    <div class="d-flex gap-2 align-items-center">
+                        <!-- 模式切换开关 -->
+                        <div class="form-check form-switch me-3" title="切换对话模式">
+                            <input class="form-check-input" type="checkbox" id="mode-switch" onchange="toggleMode()">
+                            <label class="form-check-label" for="mode-switch" id="mode-label">Chat模式</label>
+                        </div>
+                        
+                        <!-- Agent模式下的能力选择 -->
+                        <select class="form-select form-select-sm" id="agent-capability-select" style="width: 150px; display: none;">
+                            <option value="">选择能力...</option>
+                            <option value="code_review">代码评审</option>
+                            <option value="prd_review">PRD分析</option>
+                            <option value="test_case">测试生成</option>
+                        </select>
+                        
+                        <select class="form-select form-select-sm" id="repository-select" style="width: 200px;">
+                            <option value="">选择关联仓库...</option>
+                        </select>
+                        <select class="form-select form-select-sm" id="knowledge-base-select" style="width: 200px;">
+                            <option value="">选择知识库...</option>
+                        </select>
+                        <button class="btn btn-sm btn-outline-primary" onclick="loadSessions()">
+                            <i class="bi bi-arrow-clockwise"></i> 刷新
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- 消息区域 -->
+                <div id="chat-messages" style="height: 400px; overflow-y: auto; padding: 20px; background-color: #f8f9fa; border-radius: 8px; margin-bottom: 20px;">
+                    <div class="text-center text-muted" id="welcome-message">
+                        <p>选择一个会话或创建新会话开始对话</p>
+                    </div>
+                </div>
+                
+                <!-- 输入区域 -->
+                <div id="input-area" style="display: none;">
+                    <div class="input-group">
+                        <textarea class="form-control" id="message-input" rows="3" placeholder="输入您的问题..."></textarea>
+                        <button class="btn btn-primary" onclick="sendMessage()">
+                            <i class="bi bi-send"></i> 发送
+                        </button>
+                    </div>
+                    <div class="mt-2">
+                        <small class="text-muted">
+                            <i class="bi bi-info-circle"></i> AI将基于知识库中的文档进行回答
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 检索到的文档 -->
+        <div class="card mt-3" id="retrieved-docs-card" style="display: none;">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="bi bi-file-earmark-text"></i> 参考文档</h6>
+            </div>
+            <div class="card-body">
+                <div id="retrieved-docs"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.message {
+    margin-bottom: 15px;
+    padding: 10px 15px;
+    border-radius: 10px;
+    max-width: 80%;
+}
+.message.user {
+    background-color: #007bff;
+    color: white;
+    margin-left: auto;
+}
+.message.assistant {
+    background-color: #e9ecef;
+    color: #333;
+}
+.message.system {
+    background-color: #ffc107;
+    color: #333;
+    text-align: center;
+    max-width: 100%;
+}
+.session-item {
+    padding: 10px 15px;
+    cursor: pointer;
+    border-bottom: 1px solid #dee2e6;
+    transition: background-color 0.2s;
+}
+.session-item:hover {
+    background-color: #f8f9fa;
+}
+.session-item.active {
+    background-color: #e7f3ff;
+    border-left: 3px solid #007bff;
+}
+.session-title {
+    font-weight: 500;
+    margin-bottom: 5px;
+}
+.session-time {
+    font-size: 12px;
+    color: #6c757d;
+}
+.typing-indicator {
+    display: inline-block;
+    animation: blink 1.4s infinite both;
+}
+.typing-indicator::before {
+    content: 'AI正在思考';
+}
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+</style>
+
+<script>
+let currentMode = 'chat'; // 'chat' or 'agent'
+
+// 页面加载时初始化
+document.addEventListener('DOMContentLoaded', function() {
+    loadRepositories();
+    loadKnowledgeBases(); // 加载知识库
+    loadSessions();
+    
+    // 初始化模式
+    toggleMode(false); // 不触发切换事件，只初始化UI
+    
+    // 绑定回车发送
+    document.getElementById('message-input').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+});
+
+// 切换模式
+function toggleMode(isSwitch = true) {
+    const modeSwitch = document.getElementById('mode-switch');
+    const modeLabel = document.getElementById('mode-label');
+    const welcomeMsg = document.getElementById('welcome-message');
+    
+    if (isSwitch) {
+        currentMode = modeSwitch.checked ? 'agent' : 'chat';
+    } else {
+        // 初始化时根据 checkbox 状态设置
+        modeSwitch.checked = currentMode === 'agent';
+    }
+    
+    if (currentMode === 'agent') {
+        modeLabel.textContent = 'Agent模式';
+        modeLabel.classList.add('text-primary');
+        document.getElementById('agent-capability-select').style.display = 'block';
+        document.getElementById('knowledge-base-select').style.display = 'none';
+        
+        updateAgentWelcome();
+    } else {
+        modeLabel.textContent = 'Chat模式';
+        modeLabel.classList.remove('text-primary');
+        document.getElementById('agent-capability-select').style.display = 'none';
+        document.getElementById('knowledge-base-select').style.display = 'block';
+        
+        if (welcomeMsg) {
+            welcomeMsg.innerHTML = `
+                <h5>💬 Chat 知识问答模式</h5>
+                <p>在此模式下，您可以与我进行自由对话：</p>
+                <ul class="text-start d-inline-block">
+                    <li>查询关联知识库内容</li>
+                    <li>分析代码逻辑与业务规则</li>
+                    <li>技术咨询与方案探讨</li>
+                </ul>
+            `;
+        }
+    }
+}
+
+// 监听能力选择变化
+document.getElementById('agent-capability-select').addEventListener('change', updateAgentWelcome);
+
+function updateAgentWelcome() {
+    const capability = document.getElementById('agent-capability-select').value;
+    const welcomeMsg = document.getElementById('welcome-message');
+    if (!welcomeMsg) return;
+    
+    let content = '';
+    switch(capability) {
+        case 'code_review':
+            content = `
+                <h5>🧐 代码评审 Agent</h5>
+                <p>我可以帮您：</p>
+                <ul class="text-start d-inline-block">
+                    <li>审查代码逻辑与规范</li>
+                    <li>发现潜在Bug与安全漏洞</li>
+                    <li>提供重构建议</li>
+                </ul>
+                <p class="text-muted small">请选择关联仓库后开始对话</p>
+            `;
+            break;
+        case 'prd_review':
+            content = `
+                <h5>📝 PRD分析 Agent</h5>
+                <p>我可以帮您：</p>
+                <ul class="text-start d-inline-block">
+                    <li>评审需求完整性</li>
+                    <li>分析业务逻辑漏洞</li>
+                    <li>生成用例草稿</li>
+                </ul>
+            `;
+            break;
+        case 'test_case':
+            content = `
+                <h5>🧪 测试生成 Agent</h5>
+                <p>我可以帮您：</p>
+                <ul class="text-start d-inline-block">
+                    <li>根据需求生成测试用例</li>
+                    <li>根据代码生成单元测试</li>
+                    <li>覆盖边界条件</li>
+                </ul>
+            `;
+            break;
+        default:
+            content = `
+                <h5>🤖 Agent 智能工作模式</h5>
+                <p>请在上方选择具体能力（代码评审、PRD分析、测试生成）</p>
+            `;
+    }
+    welcomeMsg.innerHTML = content;
+}
+
+// 加载知识库列表
+function loadKnowledgeBases() {
+    // 假设有一个知识库列表API，这里先用 Mock 数据或复用 Repository API 如果知识库是基于仓库的
+    // 或者如果还没有知识库 API，可以先置空
+    const select = document.getElementById('knowledge-base-select');
+    select.innerHTML = '<option value="">选择知识库...</option>';
+    
+    // TODO: 实现后端知识库列表 API
+    // fetch('/api/v1/knowledge/bases/') ...
+    // 暂时添加一些示例选项
+    const demoOptions = [
+        {id: 'kb1', name: '产品需求文档库'},
+        {id: 'kb2', name: '技术规范库'},
+        {id: 'kb3', name: '业务规则库'}
+    ];
+    
+    demoOptions.forEach(kb => {
+        const option = document.createElement('option');
+        option.value = kb.id;
+        option.textContent = kb.name;
+        select.appendChild(option);
+    });
+}
+
+// 加载仓库列表
+function loadRepositories() {
+    fetch('/api/v1/repository/repositories/', {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken')
+        }
+    })
+    .then(response => response.json())
+    .then(result => {
+        // DRF分页格式: {count, next, previous, results}
+        const repositories = result.results || result.data || [];
+        const select = document.getElementById('repository-select');
+        select.innerHTML = '<option value="">请选择仓库</option>';
+        
+        repositories.forEach(repo => {
+            const option = document.createElement('option');
+            option.value = repo.id;
+            option.textContent = repo.name;
+            select.appendChild(option);
+        });
+    })
+    .catch(error => {
+        console.error('加载仓库列表失败:', error);
+    });
+}
+
+// 加载会话列表
+function loadSessions() {
+    fetch('/api/v1/knowledge/sessions/', {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken')
+        }
+    })
+    .then(response => response.json())
+    .then(result => {
+        // DRF分页格式: {count, next, previous, results} 或自定义格式 {code, data}
+        const sessions = result.results || result.data || [];
+        const sessionList = document.getElementById('session-list');
+        sessionList.innerHTML = '';
+        
+        if (sessions.length === 0) {
+            sessionList.innerHTML = '<div class="p-3 text-center text-muted">暂无会话</div>';
+            return;
+        }
+        
+        // 按更新时间倒序排列
+        sessions.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+        
+        sessions.forEach(session => {
+            const item = document.createElement('div');
+            item.className = 'session-item';
+            if (session.session_id === currentSessionId) {
+                item.classList.add('active');
+            }
+            item.innerHTML = `
+                <div class="session-title">${session.title}</div>
+                <div class="session-time">${new Date(session.updated_at).toLocaleString()}</div>
+            `;
+            item.onclick = () => selectSession(session);
+            sessionList.appendChild(item);
+        });
+    })
+    .catch(error => {
+        console.error('加载会话列表失败:', error);
+    });
+}
+
+// 创建新会话
+function createNewSession() {
+    const repositoryId = document.getElementById('repository-select').value;
+    const title = prompt('请输入会话标题：', '新会话');
+    
+    if (!title) return;
+    
+    fetch('/api/v1/knowledge/sessions/', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({
+            title: title,
+            repository_id: repositoryId || null
+        })
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.code === 0) {
+            selectSession(result.data);
+            loadSessions();
+        } else {
+            alert('创建失败: ' + result.message);
+        }
+    });
+}
+
+// 选择会话
+function selectSession(session) {
+    currentSessionId = session.session_id;
+    currentRepositoryId = session.repository_id;
+    
+    // 更新UI
+    document.getElementById('current-session-title').textContent = session.title;
+    document.getElementById('input-area').style.display = 'block';
+    
+    // 更新会话列表高亮
+    document.querySelectorAll('.session-item').forEach(item => {
+        item.classList.remove('active');
+        if (item.querySelector('.session-title').textContent === session.title) {
+            item.classList.add('active');
+        }
+    });
+    
+    // 加载消息
+    loadMessages(session);
+}
+
+// 加载消息
+function loadMessages(session) {
+    const chatMessages = document.getElementById('chat-messages');
+    chatMessages.innerHTML = '';
+    
+    if (!session.messages || session.messages.length === 0) {
+        chatMessages.innerHTML = '<div class="text-center text-muted"><p>开始新的对话吧！</p></div>';
+        return;
+    }
+    
+    session.messages.forEach(msg => {
+        appendMessage(msg.role, msg.content);
+    });
+    
+    // 滚动到底部
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// 添加消息到聊天区域
+function appendMessage(role, content, isStreaming = false) {
+    const chatMessages = document.getElementById('chat-messages');
+    
+    // 如果是第一条消息，清除提示
+    if (chatMessages.querySelector('.text-center')) {
+        chatMessages.innerHTML = '';
+    }
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${role}`;
+    
+    if (isStreaming) {
+        messageDiv.id = 'streaming-message';
+        messageDiv.innerHTML = content;
+    } else {
+        messageDiv.innerHTML = content.replace(/\n/g, '<br>');
+    }
+    
+    chatMessages.appendChild(messageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    
+    return messageDiv;
+}
+
+// 发送消息
+function sendMessage() {
+    const input = document.getElementById('message-input');
+    const message = input.value.trim();
+    
+    if (!message || !currentSessionId) {
+        alert('请输入消息并选择会话');
+        return;
+    }
+    
+    // 清空输入框
+    input.value = '';
+    
+    // 添加用户消息
+    appendMessage('user', message);
+    
+    // 显示正在输入
+    const typingDiv = document.createElement('div');
+    typingDiv.className = 'message assistant typing-indicator';
+    typingDiv.id = 'typing-indicator';
+    document.getElementById('chat-messages').appendChild(typingDiv);
+    
+    // 发送到服务器（流式）
+    const capability = currentMode === 'agent' ? document.getElementById('agent-capability-select').value : 'general';
+    const repoId = document.getElementById('repository-select').value;
+    const kbId = document.getElementById('knowledge-base-select').value;
+    
+    let url = `/ai-chat/api/chat/stream/?session_id=${currentSessionId}&message=${encodeURIComponent(message)}`;
+    url += `&conversation_type=${currentMode === 'agent' ? capability : 'chat'}`;
+    if (repoId) url += `&repository_id=${repoId}`;
+    if (kbId) url += `&knowledge_base_id=${kbId}`;
+    
+    fetch(url, {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken')
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullResponse = '';
+        let streamingMessageDiv = null;
+        
+        function readStream() {
+            return reader.read().then(({ done, value }) => {
+                if (done) {
+                    // 流结束
+                    if (streamingMessageDiv) {
+                        streamingMessageDiv.innerHTML = fullResponse.replace(/\n/g, '<br>');
+                    }
+                    
+                    // 刷新会话列表
+                    loadSessions();
+                    return;
+                }
+                
+                // 解码数据
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split('\n');
+                
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = line.slice(6);
+                        if (data === '[DONE]') {
+                            continue;
+                        }
+                        
+                        try {
+                            const json = JSON.parse(data);
+                            
+                            if (json.content) {
+                                // 移除正在输入提示
+                                const typingIndicator = document.getElementById('typing-indicator');
+                                if (typingIndicator) {
+                                    typingIndicator.remove();
+                                }
+                                
+                                // 创建或更新流式消息
+                                if (!streamingMessageDiv) {
+                                    streamingMessageDiv = appendMessage('assistant', '', true);
+                                }
+                                
+                                fullResponse += json.content;
+                                streamingMessageDiv.innerHTML = fullResponse.replace(/\n/g, '<br>');
+                                
+                                // 滚动到底部
+                                document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;
+                            }
+                        } catch (e) {
+                            console.error('Error parsing JSON:', e);
+                        }
+                    }
+                }
+                
+                return readStream();
+            });
+        }
+        
+        return readStream();
+    })
+    .catch(error => {
+        console.error('Stream error:', error);
+        
+        // 移除正在输入提示
+        const typingIndicator = document.getElementById('typing-indicator');
+        if (typingIndicator) {
+            typingIndicator.remove();
+        }
+        
+        alert('发送消息失败，请重试');
+    });
+}
+
+// 获取CSRF token
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+</script>
+{% endblock %}

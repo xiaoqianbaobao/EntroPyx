@@ -1,0 +1,320 @@
+{% extends 'base.html' %}
+{% load custom_filters %}
+
+{% block title %}{{ prd_review.title }} - PRD评审详情 - 熵减X-AI{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <a href="/prd-review/prd-reviews/" class="text-decoration-none text-muted">
+            <i class="bi bi-arrow-left"></i> 返回列表
+        </a>
+        <h2 class="mt-2">{{ prd_review.title }}</h2>
+        {% if prd_review.description %}
+        <p class="text-muted">{{ prd_review.description }}</p>
+        {% endif %}
+    </div>
+    <div>
+        <a href="{{ prd_review.file.url }}" target="_blank" class="btn btn-outline-primary">
+            <i class="bi bi-download"></i> 下载原文档
+        </a>
+    </div>
+</div>
+
+<!-- 评分概览卡片 -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-center border-0 shadow-sm">
+            <div class="card-body">
+                <div class="text-muted small mb-1">完整性</div>
+                <div class="display-6 text-primary">{{ prd_review.completeness_score|mul:10|floatformat:1 }}</div>
+                <div class="progress mt-2" style="height: 6px;">
+                    <div class="progress-bar bg-primary" style="width: {{ prd_review.completeness_score|mul:100 }}%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center border-0 shadow-sm">
+            <div class="card-body">
+                <div class="text-muted small mb-1">一致性</div>
+                <div class="display-6 text-success">{{ prd_review.consistency_score|mul:10|floatformat:1 }}</div>
+                <div class="progress mt-2" style="height: 6px;">
+                    <div class="progress-bar bg-success" style="width: {{ prd_review.consistency_score|mul:100 }}%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center border-0 shadow-sm">
+            <div class="card-body">
+                <div class="text-muted small mb-1">风险</div>
+                <div class="display-6 text-warning">{{ prd_review.risk_score|mul:10|floatformat:1 }}</div>
+                <div class="progress mt-2" style="height: 6px;">
+                    <div class="progress-bar bg-warning" style="width: {{ prd_review.risk_score|mul:100 }}%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center border-0 shadow-sm">
+            <div class="card-body">
+                <div class="text-muted small mb-1">综合得分</div>
+                <div class="display-6 {% if prd_review.overall_score >= 0.8 %}text-success{% elif prd_review.overall_score >= 0.6 %}text-warning{% else %}text-danger{% endif %}">
+                    {{ prd_review.overall_score|mul:10|floatformat:1 }}
+                </div>
+                <div class="progress mt-2" style="height: 6px;">
+                    <div class="progress-bar {% if prd_review.overall_score >= 0.8 %}bg-success{% elif prd_review.overall_score >= 0.6 %}bg-warning{% else %}bg-danger{% endif %}" 
+                         style="width: {{ prd_review.overall_score|mul:100 }}%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- AI提取的结构化内容 -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-light">
+                <h5 class="mb-0"><i class="bi bi-book"></i> 需求背景</h5>
+            </div>
+            <div class="card-body">
+                {{ prd_review.background|default:"暂无背景信息" }}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-light">
+                <h5 class="mb-0"><i class="bi bi-lightbulb"></i> AI改进建议</h5>
+            </div>
+            <div class="card-body">
+                {{ prd_review.ai_suggestions|default:"暂无建议" }}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 用户故事 -->
+{% if prd_review.user_stories %}
+<div class="card mb-4">
+    <div class="card-header bg-light">
+        <h5 class="mb-0"><i class="bi bi-people"></i> 用户故事 ({{ prd_review.user_stories|length }})</h5>
+    </div>
+    <div class="card-body">
+        <div class="list-group">
+            {% for story in prd_review.user_stories %}
+            <div class="list-group-item">
+                <div class="d-flex w-100 justify-content-between">
+                    <h6 class="mb-1">
+                        <i class="bi bi-chat-quote text-primary"></i>
+                        {{ story.story }}
+                    </h6>
+                </div>
+                {% if story.acceptance %}
+                <div class="mt-2">
+                    <small class="text-muted">验收标准:</small>
+                    <ul class="mb-0 mt-1 ps-3">
+                        {% for acc in story.acceptance %}
+                        <li class="small">{{ acc }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- 需求点列表 -->
+{% if prd_review.requirements %}
+<div class="card mb-4">
+    <div class="card-header bg-light">
+        <h5 class="mb-0"><i class="bi bi-list-check"></i> 需求点清单 ({{ prd_review.requirements|length }})</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th style="width: 100px;">需求ID</th>
+                        <th>需求描述</th>
+                        <th style="width: 100px;">优先级</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for req in prd_review.requirements %}
+                    <tr>
+                        <td><code>{{ req.id|default:"-" }}</code></td>
+                        <td>{{ req.description }}</td>
+                        <td>
+                            <span class="badge {% if req.priority == 'P0' %}bg-danger{% elif req.priority == 'P1' %}bg-warning{% else %}bg-secondary{% endif %}">
+                                {{ req.priority|default:"-" }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- 发现的问题 -->
+{% if prd_review.issues_found %}
+<div class="card mb-4">
+    <div class="card-header bg-light">
+        <h5 class="mb-0">
+            <i class="bi bi-exclamation-triangle"></i> 发现的问题 ({{ prd_review.issues_found|length }})
+        </h5>
+    </div>
+    <div class="card-body">
+        {% for issue in prd_review.issues_found %}
+        <div class="alert {% if issue.severity == 'high' %}alert-danger{% elif issue.severity == 'medium' %}alert-warning{% else %}alert-info{% endif %} mb-3">
+            <div class="d-flex align-items-start">
+                <div class="flex-shrink-0">
+                    <i class="bi bi-{% if issue.severity == 'high' %}x-circle{% elif issue.severity == 'medium' %}exclamation-circle{% else %}info-circle{% endif %} fs-5"></i>
+                </div>
+                <div class="flex-grow-1 ms-3">
+                    <h6 class="alert-heading mb-1">
+                        {{ issue.type|upper }} - {{ issue.severity|upper }}
+                    </h6>
+                    <p class="mb-2">{{ issue.description }}</p>
+                    <hr class="my-2">
+                    <small class="mb-0">
+                        <strong>建议:</strong> {{ issue.suggestion }}
+                    </small>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- 文件信息 -->
+<div class="card mb-4">
+    <div class="card-header bg-light">
+        <h5 class="mb-0"><i class="bi bi-info-circle"></i> 文件信息</h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <table class="table table-borderless table-sm">
+                    <tr>
+                        <td style="width: 120px;"><strong>文件类型</strong></td>
+                        <td>{{ prd_review.get_file_type_display }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>文件大小</strong></td>
+                        <td>{{ prd_review.file_size|filesizeformat }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>创建人</strong></td>
+                        <td>{{ prd_review.created_by.username }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>创建时间</strong></td>
+                        <td>{{ prd_review.created_at|date:"Y-m-d H:i" }}</td>
+                    </tr>
+                </table>
+            </div>
+            <div class="col-md-6">
+                <table class="table table-borderless table-sm">
+                    <tr>
+                        <td style="width: 120px;"><strong>评审状态</strong></td>
+                        <td>
+                            <span class="badge {% if prd_review.review_status == 'APPROVED' %}bg-success{% elif prd_review.review_status == 'REJECTED' %}bg-danger{% else %}bg-warning{% endif %}">
+                                {{ prd_review.get_review_status_display }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% if prd_review.reviewed_by %}
+                    <tr>
+                        <td><strong>评审人</strong></td>
+                        <td>{{ prd_review.reviewed_by.username }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>评审时间</strong></td>
+                        <td>{{ prd_review.reviewed_at|date:"Y-m-d H:i" }}</td>
+                    </tr>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 人工评审操作 -->
+<div class="card mb-4">
+    <div class="card-header bg-light">
+        <h5 class="mb-0"><i class="bi bi-pencil-square"></i> 人工评审</h5>
+    </div>
+    <div class="card-body">
+        <form id="reviewForm">
+            {% csrf_token %}
+            <div class="mb-3">
+                <label class="form-label">评审意见</label>
+                <textarea class="form-control" id="reviewComment" rows="4" placeholder="请输入评审意见...">{{ prd_review.review_comment }}</textarea>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-success" onclick="submitReview('APPROVED')">
+                    <i class="bi bi-check-circle"></i> 通过
+                </button>
+                <button type="button" class="btn btn-danger" onclick="submitReview('REJECTED')">
+                    <i class="bi bi-x-circle"></i> 需修改
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function submitReview(status) {
+    const comment = document.getElementById('reviewComment').value;
+    
+    fetch(`/api/v1/prd-review/prd-reviews/{{ prd_review.id }}/approve/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({
+            status: status,
+            comment: comment
+        })
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.code === 0) {
+            alert('评审完成！');
+            location.reload();
+        } else {
+            alert('操作失败: ' + result.message);
+        }
+    })
+    .catch(error => {
+        alert('操作失败: ' + error);
+    });
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+</script>
+{% endblock %}

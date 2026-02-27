@@ -1,0 +1,166 @@
+{% extends 'base.html' %}
+
+{% block title %}代码评审 - 熵减X-AI{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-code-slash"></i> 代码评审</h2>
+    <div class="btn-group">
+        <a href="/code-review/reviews/?risk_level=HIGH" class="btn btn-outline-danger">高风险</a>
+        <a href="/code-review/reviews/?risk_level=MEDIUM" class="btn btn-outline-warning">中风险</a>
+        <a href="/code-review/reviews/?risk_level=LOW" class="btn btn-outline-success">低风险</a>
+        <a href="/code-review/reviews/" class="btn btn-outline-secondary">全部</a>
+    </div>
+</div>
+
+<!-- 筛选表单 -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">仓库</label>
+                <select class="form-select" name="repository_id">
+                    <option value="">全部</option>
+                    {% for repo in repositories %}
+                    <option value="{{ repo.id }}" {% if request.GET.repository_id == repo.id|stringformat:"s" %}selected{% endif %}>
+                        {{ repo.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">风险等级</label>
+                <select class="form-select" name="risk_level">
+                    <option value="">全部</option>
+                    <option value="HIGH" {% if request.GET.risk_level == 'HIGH' %}selected{% endif %}>高风险</option>
+                    <option value="MEDIUM" {% if request.GET.risk_level == 'MEDIUM' %}selected{% endif %}>中风险</option>
+                    <option value="LOW" {% if request.GET.risk_level == 'LOW' %}selected{% endif %}>低风险</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">分支</label>
+                <input type="text" class="form-control" name="branch" value="{{ request.GET.branch|default:'' }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">作者</label>
+                <input type="text" class="form-control" name="author" value="{{ request.GET.author|default:'' }}">
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary me-2"><i class="bi bi-search"></i> 搜索</button>
+                <a href="/code-review/reviews/" class="btn btn-outline-secondary">重置</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 评审列表 -->
+<div class="card">
+    <div class="card-body">
+        <div class="list-group list-group-flush">
+            {% for review in reviews %}
+            <div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <span class="badge {% if review.risk_level == 'HIGH' %}risk-badge-HIGH{% elif review.risk_level == 'MEDIUM' %}risk-badge-MEDIUM{% else %}risk-badge-LOW{% endif %} me-2">
+                            {{ review.get_risk_level_display }}
+                        </span>
+                        <strong>{{ review.repository.name }}</strong>
+                        <span class="text-muted"> / {{ review.branch }}</span>
+                        <code class="ms-2">{{ review.commit_hash|slice:":8" }}</code>
+                    </div>
+                    <small class="text-muted">{{ review.created_at|date:"Y-m-d H:i" }}</small>
+                </div>
+                <p class="mb-1 mt-2">{{ review.commit_message }}</p>
+                <small class="text-muted">
+                    <i class="bi bi-person"></i> {{ review.author }}
+                    <span class="ms-3"><i class="bi bi-file-earmark-code"></i> {{ review.changed_files|length }} 个文件</span>
+                    <span class="ms-3">
+                        反馈状态:
+                        {% if review.feedback_status == 'PENDING' %}
+                        <span class="badge bg-warning">待反馈</span>
+                        {% elif review.feedback_status == 'CORRECT' %}
+                        <span class="badge bg-success">准确</span>
+                        {% elif review.feedback_status == 'FALSE_POSITIVE' %}
+                        <span class="badge bg-danger">误报</span>
+                        {% else %}
+                        <span class="badge bg-info">漏报</span>
+                        {% endif %}
+                    </span>
+                </small>
+                <div class="mt-2">
+                    <a href="/code-review/reviews/{{ review.id }}/" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-eye"></i> 查看详情
+                    </a>
+                    {% if review.feedback_status == 'PENDING' %}
+                    <button class="btn btn-sm btn-outline-success" onclick="submitFeedback({{ review.id }}, 'CORRECT')">
+                        <i class="bi bi-check"></i> 准确
+                    </button>
+                    <button class="btn btn-sm btn-outline-warning" onclick="submitFeedback({{ review.id }}, 'FALSE_POSITIVE')">
+                        <i class="bi bi-x"></i> 误报
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        {% if is_paginated %}
+        <nav class="mt-4">
+            <ul class="pagination justify-content-center">
+                {% if page_obj.has_previous %}
+                <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}">上一页</a></li>
+                {% endif %}
+                <li class="page-item disabled"><span class="page-link">第 {{ page_obj.number }} / {{ paginator.num_pages }} 页</span></li>
+                {% if page_obj.has_next %}
+                <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}">下一页</a></li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+// 获取 CSRF Token
+function getCsrfToken() {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, 10) === ('csrftoken=')) {
+                cookieValue = decodeURIComponent(cookie.substring(10));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+function submitFeedback(reviewId, status) {
+    const comment = prompt('请输入反馈说明（可选）:');
+    fetch(`/api/v1/code-review/reviews/${reviewId}/feedback/`, {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({ feedback_status: status, comment: comment || '' })
+    }).then(r => {
+        if (!r.ok) {
+            throw new Error(`HTTP error! status: ${r.status}`);
+        }
+        return r.json();
+    }).then(data => {
+        if (data.code === 0) {
+            location.reload();
+        } else {
+            alert(data.message || '提交失败');
+        }
+    }).catch(error => {
+        console.error('Error:', error);
+        alert('提交失败: ' + error.message);
+    });
+}
+</script>
+{% endblock %}

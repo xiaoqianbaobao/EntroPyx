@@ -1,0 +1,329 @@
+{% extends "base.html" %}
+
+{% block title %}知识图谱 - 熵减X-AI{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="bi bi-diagram-3"></i> 知识图谱</h2>
+                <a href="{% url 'meeting_assistant:meeting_list' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> 返回列表
+                </a>
+            </div>
+            
+            <!-- 搜索区域 -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="searchInput" 
+                                       placeholder="搜索实体（人员、项目、主题、问题等）...">
+                                <button class="btn btn-primary" id="searchBtn">
+                                    <i class="bi bi-search"></i> 搜索
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <select class="form-select" id="entityTypeFilter">
+                                <option value="">所有类型</option>
+                                <option value="person">人员</option>
+                                <option value="project">项目</option>
+                                <option value="topic">主题</option>
+                                <option value="issue">问题</option>
+                                <option value="technology">技术</option>
+                                <option value="decision">决策</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 搜索结果 -->
+            <div class="card mb-4" id="searchResultsCard" style="display: none;">
+                <div class="card-header">
+                    <h5 class="mb-0">搜索结果</h5>
+                </div>
+                <div class="card-body">
+                    <div id="searchResults"></div>
+                </div>
+            </div>
+            
+            <!-- 图谱可视化 -->
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">图谱可视化</h5>
+                    <div>
+                        <button class="btn btn-sm btn-outline-primary" onclick="expandGraph()">
+                            <i class="bi bi-zoom-in"></i> 展开
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="resetGraph()">
+                            <i class="bi bi-arrow-counterclockwise"></i> 重置
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="graphContainer" style="height: 500px; border: 1px solid #ddd; border-radius: 8px;">
+                        <div class="text-center text-muted py-5">
+                            <i class="bi bi-diagram-3" style="font-size: 48px;"></i>
+                            <p class="mt-3">搜索实体后，将在此显示知识图谱</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 实体详情 -->
+            <div class="card" id="entityDetailCard" style="display: none;">
+                <div class="card-header">
+                    <h5 class="mb-0">实体详情</h5>
+                </div>
+                <div class="card-body">
+                    <div id="entityDetail"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.entity-badge {
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 12px;
+}
+
+.entity-person { background-color: #007bff; color: white; }
+.entity-project { background-color: #28a745; color: white; }
+.entity-topic { background-color: #ffc107; color: black; }
+.entity-issue { background-color: #dc3545; color: white; }
+.entity-technology { background-color: #17a2b8; color: white; }
+.entity-decision { background-color: #6610f2; color: white; }
+
+#graphContainer {
+    background-color: #f8f9fa;
+}
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.2/dist/vis-network.min.js"></script>
+<script>
+let network = null;
+let nodes = null;
+let edges = null;
+
+// 搜索实体
+document.getElementById('searchBtn').addEventListener('click', searchEntities);
+document.getElementById('searchInput').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        searchEntities();
+    }
+});
+
+async function searchEntities() {
+    const keyword = document.getElementById('searchInput').value.trim();
+    const entityType = document.getElementById('entityTypeFilter').value;
+    
+    if (!keyword) {
+        alert('请输入搜索关键词');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/meeting-assistant/api/kg/search/?keyword=${keyword}&entity_type=${entityType}`);
+        const data = await response.json();
+        
+        if (data.results && data.results.length > 0) {
+            displaySearchResults(data.results);
+        } else {
+            document.getElementById('searchResultsCard').style.display = 'none';
+            alert('未找到匹配的实体');
+        }
+    } catch (error) {
+        console.error('搜索失败:', error);
+        alert('搜索失败: ' + error.message);
+    }
+}
+
+function displaySearchResults(results) {
+    const container = document.getElementById('searchResults');
+    container.innerHTML = results.map(entity => `
+        <div class="list-group-item list-group-item-action clickable-entity"
+             onclick="showEntityGraph(${entity.id})">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <span class="entity-badge entity-${entity.type}">${getTypeDisplayName(entity.type)}</span>
+                    <span class="ms-2">${entity.name}</span>
+                </div>
+                <button class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-diagram-3"></i> 查看图谱
+                </button>
+            </div>
+        </div>
+    `).join('');
+    
+    document.getElementById('searchResultsCard').style.display = 'block';
+}
+
+function getTypeDisplayName(type) {
+    const typeMap = {
+        'person': '人员',
+        'project': '项目',
+        'topic': '主题',
+        'issue': '问题',
+        'technology': '技术',
+        'decision': '决策'
+    };
+    return typeMap[type] || type;
+}
+
+async function showEntityGraph(entityId) {
+    try {
+        const response = await fetch(`/meeting-assistant/api/kg/entities/${entityId}/`);
+        const data = await response.json();
+        
+        if (data.graph) {
+            renderGraph(data.graph);
+        }
+        
+        if (data.entity) {
+            displayEntityDetail(data);
+        }
+        
+        // 滚动到图谱区域
+        document.getElementById('graphContainer').scrollIntoView({ behavior: 'smooth' });
+        
+    } catch (error) {
+        console.error('获取图谱失败:', error);
+        alert('获取图谱失败: ' + error.message);
+    }
+}
+
+function renderGraph(graphData) {
+    const container = document.getElementById('graphContainer');
+    
+    // 转换数据格式
+    const visNodes = graphData.nodes.map(node => ({
+        id: node.id,
+        label: node.name,
+        color: getNodeColor(node.type),
+        shape: node.isCenter ? 'star' : 'dot',
+        size: node.isCenter ? 25 : 15
+    }));
+    
+    const visEdges = graphData.edges.map(edge => ({
+        from: edge.source,
+        to: edge.target,
+        label: edge.label,
+        arrows: 'to',
+        color: '#999'
+    }));
+    
+    const graphDataVis = {
+        nodes: new vis.DataSet(visNodes),
+        edges: new vis.DataSet(visEdges)
+    };
+    
+    const options = {
+        nodes: {
+            font: { size: 14 }
+        },
+        edges: {
+            font: { size: 12 }
+        },
+        physics: {
+            stabilization: false
+        }
+    };
+    
+    if (network) {
+        network.destroy();
+    }
+    
+    network = new vis.Network(container, graphDataVis, options);
+}
+
+function getNodeColor(type) {
+    const colorMap = {
+        'person': '#007bff',
+        'project': '#28a745',
+        'topic': '#ffc107',
+        'issue': '#dc3545',
+        'technology': '#17a2b8',
+        'decision': '#6610f2'
+    };
+    return colorMap[type] || '#6c757d';
+}
+
+function displayEntityDetail(data) {
+    const container = document.getElementById('entityDetail');
+    const entity = data.entity;
+    
+    let html = `
+        <h6>${entity.name}</h6>
+        <div class="mb-3">
+            <span class="entity-badge entity-${entity.type}">${getTypeDisplayName(entity.type)}</span>
+        </div>
+        
+        <div class="row">
+            <div class="col-md-6">
+                <p><strong>置信度:</strong> ${(entity.confidence * 100).toFixed(0)}%</p>
+                <p><strong>创建时间:</strong> ${new Date(entity.created_at).toLocaleString()}</p>
+            </div>
+            <div class="col-md-6">
+                ${entity.user_id ? `<p><strong>关联用户:</strong> ${entity.user_id}</p>` : ''}
+                ${entity.repository_id ? `<p><strong>关联仓库:</strong> ${entity.repository_id}</p>` : ''}
+                ${entity.meeting_id ? `<p><strong>关联会议:</strong> ${entity.meeting_id}</p>` : ''}
+            </div>
+        </div>
+    `;
+    
+    if (entity.metadata && Object.keys(entity.metadata).length > 0) {
+        html += `<h6 class="mt-3">元数据</h6>`;
+        html += `<ul>`;
+        for (const [key, value] of Object.entries(entity.metadata)) {
+            html += `<li><strong>${key}:</strong> ${value}</li>`;
+        }
+        html += `</ul>`;
+    }
+    
+    if (data.related_meetings && data.related_meetings.length > 0) {
+        html += `<h6 class="mt-3">相关会议</h6>`;
+        html += `<ul>`;
+        data.related_meetings.forEach(meeting => {
+            html += `<li><a href="/meeting-assistant/detail/${meeting.id}/">${meeting.title}</a> (${meeting.date})</li>`;
+        });
+        html += `</ul>`;
+    }
+    
+    if (data.relations && data.relations.length > 0) {
+        html += `<h6 class="mt-3">关系 (${data.relations.length})</h6>`;
+        html += `<ul>`;
+        data.relations.forEach(rel => {
+            html += `<li>${rel.source} -[${rel.type}]-> ${rel.target}</li>`;
+        });
+        html += `</ul>`;
+    }
+    
+    container.innerHTML = html;
+    document.getElementById('entityDetailCard').style.display = 'block';
+}
+
+function expandGraph() {
+    if (network) {
+        network.fit({ animation: true });
+    }
+}
+
+function resetGraph() {
+    document.getElementById('graphContainer').innerHTML = `
+        <div class="text-center text-muted py-5">
+            <i class="bi bi-diagram-3" style="font-size: 48px;"></i>
+            <p class="mt-3">搜索实体后，将在此显示知识图谱</p>
+        </div>
+    `;
+    document.getElementById('entityDetailCard').style.display = 'none';
+    document.getElementById('searchResultsCard').style.display = 'none';
+}
+</script>
+{% endblock %}

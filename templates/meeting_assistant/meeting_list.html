@@ -1,0 +1,311 @@
+{% extends "base.html" %}
+
+{% block title %}AI会议助手 - 熵减X-AI{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="bi bi-mic"></i> AI会议助手</h2>
+                <div>
+                    <button id="batchDeleteBtn" class="btn btn-danger me-2" style="display: none;" onclick="batchDelete()">
+                        <i class="bi bi-trash"></i> 批量删除
+                    </button>
+                    <a href="{% url 'meeting_assistant:realtime_record' %}" class="btn btn-success me-2">
+                        <i class="bi bi-mic-fill"></i> 实时录音
+                    </a>
+                    <a href="{% url 'meeting_assistant:meeting_upload' %}" class="btn btn-primary">
+                        <i class="bi bi-cloud-upload"></i> 上传录音
+                    </a>
+                </div>
+            </div>
+            
+            <!-- 统计卡片 -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card stat-card">
+                        <div class="card-body">
+                            <h5 class="card-title">总录音数</h5>
+                            <h2>{{ total_count }}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card stat-card success">
+                        <div class="card-body">
+                            <h5 class="card-title">已完成</h5>
+                            <h2>{{ total_count }}</h2> <!-- 这里可能需要后端传递单独的已完成计数 -->
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card stat-card warning">
+                        <div class="card-body">
+                            <h5 class="card-title">生成纪要</h5>
+                            <h2>{{ total_count }}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card stat-card info">
+                        <div class="card-body">
+                            <h5 class="card-title">总时长</h5>
+                            <h2>{{ total_count }}</h2>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 录音列表 -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">会议列表</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th width="40">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="selectAll" onclick="toggleSelectAll()">
+                                        </div>
+                                    </th>
+                                    <th>会议标题</th>
+                                    <th>仓库</th>
+                                    <th>会议时间</th>
+                                    <th>时长</th>
+                                    <th>状态</th>
+                                    <th>转写数</th>
+                                    <th>纪要</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for recording in recordings %}
+                                <tr>
+                                    <td>
+                                        <div class="form-check">
+                                            <input class="form-check-input recording-checkbox" type="checkbox" value="{{ recording.id }}" onclick="updateBatchBtn()">
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <a href="{% url 'meeting_assistant:meeting_detail' recording.id %}">
+                                            {{ recording.meeting_title }}
+                                        </a>
+                                    </td>
+                                    <td>{{ recording.repository.name }}</td>
+                                    <td>{{ recording.meeting_date|date:"Y-m-d H:i" }}</td>
+                                    <td>{{ recording.duration }}s</td>
+                                    <td>
+                                        <span class="badge status-badge-{{ recording.status }}">
+                                            {{ recording.get_status_display }}
+                                        </span>
+                                    </td>
+                                    <td>{{ recording.transcript_count }}</td>
+                                    <td>
+                                        {% if recording.summary %}
+                                            <a href="{% url 'meeting_assistant:summary_detail' recording.summary.id %}">
+                                                <i class="bi bi-file-text"></i>
+                                            </a>
+                                        {% else %}
+                                            <i class="bi bi-dash text-muted"></i>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <a href="{% url 'meeting_assistant:meeting_detail' recording.id %}" 
+                                           class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-eye"></i> 查看
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="8" class="text-center text-muted">
+                                        暂无会议记录
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- 分页控件 -->
+                    <div class="d-flex justify-content-between align-items-center mt-4">
+                        <div class="d-flex align-items-center">
+                            <span class="me-2">每页显示:</span>
+                            <select class="form-select form-select-sm" style="width: 70px;" onchange="changePerPage(this.value)">
+                                <option value="10" {% if per_page == 10 %}selected{% endif %}>10</option>
+                                <option value="20" {% if per_page == 20 %}selected{% endif %}>20</option>
+                                <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+                                <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+                            </select>
+                            <span class="ms-2 text-muted">共 {{ total_count }} 条记录</span>
+                        </div>
+
+                        {% if recordings.has_other_pages %}
+                        <nav aria-label="Page navigation">
+                            <ul class="pagination mb-0">
+                                {% if recordings.has_previous %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ recordings.previous_page_number }}&per_page={{ per_page }}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if search_query %}&search={{ search_query }}{% endif %}">
+                                        <span aria-hidden="true">&laquo;</span>
+                                    </a>
+                                </li>
+                                {% else %}
+                                <li class="page-item disabled">
+                                    <span class="page-link">&laquo;</span>
+                                </li>
+                                {% endif %}
+                                
+                                {% for i in recordings.paginator.page_range %}
+                                    {% if recordings.number == i %}
+                                    <li class="page-item active">
+                                        <span class="page-link">{{ i }}</span>
+                                    </li>
+                                    {% elif i > recordings.number|add:'-3' and i < recordings.number|add:'3' %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ i }}&per_page={{ per_page }}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if search_query %}&search={{ search_query }}{% endif %}">{{ i }}</a>
+                                    </li>
+                                    {% endif %}
+                                {% endfor %}
+                                
+                                {% if recordings.has_next %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ recordings.next_page_number }}&per_page={{ per_page }}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if search_query %}&search={{ search_query }}{% endif %}">
+                                        <span aria-hidden="true">&raquo;</span>
+                                    </a>
+                                </li>
+                                {% else %}
+                                <li class="page-item disabled">
+                                    <span class="page-link">&raquo;</span>
+                                </li>
+                                {% endif %}
+                            </ul>
+                        </nav>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 全选/取消全选
+    function toggleSelectAll() {
+        const selectAll = document.getElementById('selectAll');
+        const checkboxes = document.querySelectorAll('.recording-checkbox');
+        
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = selectAll.checked;
+        });
+        
+        updateBatchBtn();
+    }
+    
+    // 更新批量操作按钮状态
+    function updateBatchBtn() {
+        const checkboxes = document.querySelectorAll('.recording-checkbox:checked');
+        const batchDeleteBtn = document.getElementById('batchDeleteBtn');
+        
+        if (checkboxes.length > 0) {
+            batchDeleteBtn.style.display = 'inline-block';
+        } else {
+            batchDeleteBtn.style.display = 'none';
+        }
+        
+        // 更新全选框状态
+        const allCheckboxes = document.querySelectorAll('.recording-checkbox');
+        const selectAll = document.getElementById('selectAll');
+        if (checkboxes.length === allCheckboxes.length && allCheckboxes.length > 0) {
+            selectAll.checked = true;
+            selectAll.indeterminate = false;
+        } else if (checkboxes.length > 0) {
+            selectAll.checked = false;
+            selectAll.indeterminate = true;
+        } else {
+            selectAll.checked = false;
+            selectAll.indeterminate = false;
+        }
+    }
+    
+    // 批量删除
+    function batchDelete() {
+        const checkboxes = document.querySelectorAll('.recording-checkbox:checked');
+        const ids = Array.from(checkboxes).map(cb => cb.value);
+        
+        if (ids.length === 0) return;
+        
+        if (!confirm(`确定要删除选中的 ${ids.length} 条会议记录吗？此操作不可恢复。`)) {
+            return;
+        }
+        
+        fetch('/meeting-assistant/api/recordings/bulk-delete/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({ ids: ids })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                alert('删除失败: ' + data.error);
+            } else {
+                alert('删除成功');
+                location.reload();
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('删除请求失败，请检查网络或控制台日志');
+        });
+    }
+    
+    // 获取CSRF Token
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+    
+    // 改变每页显示条数
+    function changePerPage(perPage) {
+        const urlParams = new URLSearchParams(window.location.search);
+        urlParams.set('per_page', perPage);
+        urlParams.set('page', 1); // 切换条数时重置到第一页
+        window.location.search = urlParams.toString();
+    }
+</script>
+
+<style>
+.status-badge-uploaded {
+    background-color: #6c757d;
+    color: white;
+}
+.status-badge-processing {
+    background-color: #ffc107;
+    color: black;
+}
+.status-badge-completed {
+    background-color: #28a745;
+    color: white;
+}
+.status-badge-failed {
+    background-color: #dc3545;
+    color: white;
+}
+</style>
+{% endblock %}

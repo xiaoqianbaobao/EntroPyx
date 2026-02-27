@@ -1,0 +1,169 @@
+{% extends 'base.html' %}
+
+{% block title %}知识库上传 - 熵减X-AI{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="mb-0">
+                        <i class="bi bi-cloud-upload"></i>
+                        知识库文档上传
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <form id="uploadForm" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        
+                        <div class="mb-3">
+                            <label for="title" class="form-label">文档标题 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="title" name="title" required>
+                            <div class="form-text">请输入文档的标题</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="description" class="form-label">文档描述</label>
+                            <textarea class="form-control" id="description" name="description" rows="3"></textarea>
+                            <div class="form-text">请输入文档的简要描述</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="file" class="form-label">选择文件 <span class="text-danger">*</span></label>
+                            <input class="form-control" type="file" id="file" name="file" accept=".pdf,.doc,.docx,.txt,.md,.xlsx,.xls" required>
+                            <div class="form-text">
+                                支持的文件格式：PDF, DOC, DOCX, TXT, MD, XLSX, XLS
+                            </div>
+                        </div>
+                        
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                            <button type="button" class="btn btn-secondary" onclick="window.history.back()">
+                                <i class="bi bi-arrow-left"></i> 返回
+                            </button>
+                            <button type="submit" class="btn btn-primary" id="submitBtn">
+                                <i class="bi bi-upload"></i> 立即上传
+                            </button>
+                        </div>
+                    </form>
+                    
+                    <div id="progressContainer" class="mt-3" style="display: none;">
+                        <div class="progress">
+                            <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                                 role="progressbar" style="width: 0%"></div>
+                        </div>
+                        <div class="text-center mt-2">
+                            <span id="progressText">准备上传...</span>
+                        </div>
+                    </div>
+                    
+                    <div id="messageContainer" class="mt-3" style="display: none;"></div>
+                </div>
+            </div>
+            
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-info-circle"></i>
+                        上传说明
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <ul>
+                        <li>支持的文件格式：PDF, DOC, DOCX, TXT, MD, XLSX, XLS</li>
+                        <li>文件大小限制：100MB</li>
+                        <li>上传后系统会自动处理文档内容</li>
+                        <li>处理完成后可在知识库列表中查看</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('uploadForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const form = e.target;
+    const formData = new FormData(form);
+    const submitBtn = document.getElementById('submitBtn');
+    const progressContainer = document.getElementById('progressContainer');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    const messageContainer = document.getElementById('messageContainer');
+    
+    // 显示进度条
+    progressContainer.style.display = 'block';
+    submitBtn.disabled = true;
+    
+    // 获取CSRF token
+    const csrftoken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    
+    fetch('/api/v1/knowledge/api/documents/upload/', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-CSRFToken': csrftoken
+        }
+    })
+    .then(response => {
+        // 检查响应类型
+        const contentType = response.headers.get('content-type');
+        
+        if (!response.ok) {
+            throw new Error(`HTTP错误: ${response.status} ${response.statusText}`);
+        }
+        
+        if (contentType && contentType.includes('application/json')) {
+            return response.json();
+        } else {
+            return response.text().then(text => {
+                throw new Error(`服务器返回非JSON响应: ${text.substring(0, 200)}...`);
+            });
+        }
+    })
+    .then(data => {
+        if (typeof data === 'object' && data.success) {
+            showMessage('上传成功！文档正在处理中...', 'success');
+            setTimeout(() => {
+                window.location.href = '/api/v1/knowledge/';
+            }, 2000);
+        } else if (typeof data === 'object' && data.message) {
+            showMessage(data.message, data.success ? 'success' : 'danger');
+        } else {
+            showMessage('上传成功！文档正在处理中...', 'success');
+            setTimeout(() => {
+                window.location.href = '/api/v1/knowledge/';
+            }, 2000);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showMessage('上传失败：' + error.message, 'danger');
+        
+        // 如果是CSRF错误，尝试重新加载页面获取新的token
+        if (error.message.includes('CSRF') || error.message.includes('token')) {
+            setTimeout(() => {
+                window.location.reload();
+            }, 3000);
+        }
+    })
+    .finally(() => {
+        progressContainer.style.display = 'none';
+        submitBtn.disabled = false;
+    });
+});
+
+function showMessage(message, type) {
+    const messageContainer = document.getElementById('messageContainer');
+    messageContainer.innerHTML = `
+        <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    `;
+    messageContainer.style.display = 'block';
+}
+</script>
+{% endblock %}

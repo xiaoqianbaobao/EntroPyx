@@ -1,0 +1,360 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}AI智能评审 - 熵减X-AI{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-0">
+    <div class="row g-0" style="height: 100vh; overflow: hidden; position: relative;">
+        <!-- 左侧对话列表 -->
+        <div id="chatSidebar" class="col-auto border-end" style="position: relative; height: 100vh; width: 280px; z-index: 1000; background: #f8f9fa; overflow: hidden; transition: width 0.3s ease;">
+            <div class="p-3 border-bottom bg-white d-flex justify-content-between align-items-center" style="white-space: nowrap;">
+                <h5 class="mb-0 fw-semibold text-truncate" style="min-width: 0;">对话历史</h5>
+                <button class="btn btn-sm btn-link text-secondary p-0" onclick="toggleSidebar()">
+                    <i class="bi bi-layout-sidebar"></i>
+                </button>
+            </div>
+            
+            <div class="sidebar-content" style="width: 280px;">
+                <div class="p-3">
+                    <!-- 新建对话按钮 -->
+                    <button class="btn btn-primary w-100 mb-3" onclick="newConversation()">
+                        <i class="bi bi-plus-lg me-1"></i>新建对话
+                    </button>
+                    
+                    <!-- 对话类型筛选 -->
+                    <div class="mb-3">
+                        <select class="form-select form-select-sm" id="conversationTypeFilter" onchange="filterConversations()">
+                            <option value="">所有类型</option>
+                            <option value="code_review">代码评审</option>
+                            <option value="prd_review">PRD评审</option>
+                            <option value="test_case">测试用例</option>
+                            <option value="knowledge">知识库</option>
+                            <option value="general">通用</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- 对话列表 -->
+                <div class="flex-grow-1 overflow-auto px-2" style="height: calc(100vh - 180px);">
+                    <div id="conversationList" class="d-flex flex-column gap-2">
+                        {% for conversation in conversations %}
+                        <div class="conversation-item rounded-2 p-3" 
+                             data-type="{{ conversation.conversation_type }}"
+                             onclick="loadConversation({{ conversation.id }})"
+                             style="cursor: pointer; background: white; border: 1px solid #e9ecef;">
+                            <div class="d-flex justify-content-between align-items-start mb-1">
+                                <h6 class="mb-0 text-truncate" style="font-size: 0.9rem; max-width: 80%;">
+                                    {{ conversation.title }}
+                                </h6>
+                                <span class="badge rounded-pill text-bg-light text-muted" style="font-size: 0.7rem;">
+                                    {{ conversation.messages_count }}
+                                </span>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="small text-muted">
+                                    {% if conversation.conversation_type == 'code_review' %}
+                                        <span class="badge rounded-pill text-bg-primary me-1" style="font-size: 0.6rem;">代码</span>
+                                    {% elif conversation.conversation_type == 'prd_review' %}
+                                        <span class="badge rounded-pill text-bg-success me-1" style="font-size: 0.6rem;">PRD</span>
+                                    {% elif conversation.conversation_type == 'test_case' %}
+                                        <span class="badge rounded-pill text-bg-warning text-dark me-1" style="font-size: 0.6rem;">测试</span>
+                                    {% elif conversation.conversation_type == 'knowledge' %}
+                                        <span class="badge rounded-pill text-bg-info me-1" style="font-size: 0.6rem;">知识</span>
+                                    {% else %}
+                                        <span class="badge rounded-pill text-bg-secondary me-1" style="font-size: 0.6rem;">通用</span>
+                                    {% endif %}
+                                </span>
+                                <small class="text-muted" style="font-size: 0.7rem;">
+                                    {{ conversation.updated_at|date:"m-d H:i" }}
+                                </small>
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="text-center text-muted py-5">
+                            <i class="bi bi-chat-dots d-block mx-auto" style="font-size: 2rem; opacity: 0.4;"></i>
+                            <small class="mt-2">暂无对话</small>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 右侧对话区域 -->
+        <div class="col" style="height: 100vh; display: flex; flex-direction: column; overflow: hidden; position: relative;">
+            <!-- 侧边栏展开按钮（当侧边栏折叠时显示） -->
+            <button id="showSidebarBtn" class="btn btn-light shadow-sm border position-absolute top-0 start-0 m-3" 
+                    style="z-index: 1050; display: none;" onclick="toggleSidebar()">
+                <i class="bi bi-layout-sidebar"></i>
+            </button>
+            
+            <div class="d-flex flex-column flex-grow-1" style="height: 100%; overflow: hidden;">
+                <!-- 对话头部 -->
+                <div class="bg-white border-bottom px-4 py-3 flex-shrink-0">
+                    <div class="d-flex justify-content-between align-items-center" style="padding-left: 2rem;">
+                        <div>
+                            <h5 class="mb-0 fw-semibold" id="currentConversationTitle">新建对话</h5>
+                            <small class="text-muted" id="conversationMeta"></small>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-outline-secondary btn-sm" onclick="clearCurrentConversation()">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 消息区域 -->
+                <div class="flex-grow-1 overflow-auto p-4" id="messageArea" style="background-color: #fafafa; overflow-y: auto; -webkit-overflow-scrolling: touch; height: 0;">
+                    <div class="text-center text-muted py-5" id="emptyMessage">
+                        <i class="bi bi-robot" style="font-size: 3rem; color: #adb5bd;"></i>
+                        <p class="mt-3 mb-4 fs-5 fw-light" style="color: #6c757d;">AI 智能助手</p>
+                        <p class="text-secondary mb-4">随时为您提供代码评审、PRD分析、测试用例等专业建议</p>
+                    </div>
+                </div>
+                
+                <!-- 对话设置（仅在新建对话时显示） -->
+                <div class="bg-light border-bottom p-3 flex-shrink-0" id="conversationSettings" style="display: block;">
+                    <div class="row g-3">
+                        <div class="col-12 col-md-4">
+                            <label class="form-label text-muted small mb-1">对话类型</label>
+                            <select class="form-select form-select-sm" id="conversationType">
+                                <option value="general">通用对话</option>
+                                <option value="code_review">代码评审</option>
+                                <option value="prd_review">PRD评审</option>
+                                <option value="test_case">测试用例</option>
+                                <option value="knowledge">知识库问答</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label class="form-label text-muted small mb-1">关联知识库</label>
+                            <select class="form-select form-select-sm" id="knowledgeBaseSelect">
+                                <option value="">不关联</option>
+                                {% for doc in knowledge_docs %}
+                                <option value="{{ doc.id }}">{{ doc.title }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label class="form-label text-muted small mb-1">关联仓库</label>
+                            <select class="form-select form-select-sm" id="repositorySelect">
+                                <option value="">不关联</option>
+                                {% for repo in repositories %}
+                                <option value="{{ repo.id }}">{{ repo.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 输入区域 -->
+                <div class="bg-white border-top p-3 flex-shrink-0">
+                    <form id="messageForm" onsubmit="sendMessage(event)">
+                        <div class="input-group">
+                            <textarea class="form-control border rounded-2 py-2" 
+                                      id="messageInput" 
+                                      rows="2" 
+                                      placeholder="输入您的问题..."
+                                      style="resize: none; max-height: 150px;"
+                                      required></textarea>
+                            <button class="btn btn-primary px-4" type="submit" id="sendButton">
+                                <i class="bi bi-send me-1"></i>发送
+                            </button>
+                        </div>
+                        <div class="form-text text-end mt-1">
+                            <small class="text-muted">Enter 发送，Shift+Enter 换行</small>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 加载动画 -->
+<div class="modal fade" id="loadingModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 bg-transparent">
+            <div class="modal-body text-center">
+                <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                    <span class="visually-hidden">加载中...</span>
+                </div>
+                <p class="mt-3 text-white">AI正在思考...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* 消息样式优化 */
+.message {
+    margin-bottom: 1.5rem;
+    animation: fadeIn 0.2s ease-out;
+    max-width: 80%; /* 限制气泡最大宽度，给对方留出空间 */
+    display: flex;
+    flex-direction: column;
+}
+
+.message-user {
+    align-items: flex-end;
+    margin-left: auto; /* 将用户消息推到右侧 */
+    margin-right: 1.5rem; /* 增加右侧间距，避免贴边 */
+}
+
+.message-assistant {
+    align-items: flex-start;
+    margin-right: auto; /* 将助手消息推到左侧 */
+    margin-left: 1.5rem; /* 增加左侧间距，避免贴边 */
+}
+
+.message-content {
+    padding: 1rem 1.25rem; /* 增加内边距 */
+    border-radius: 1.25rem; /* 增大圆角 */
+    word-wrap: break-word; /* 兼容旧浏览器 */
+    overflow-wrap: break-word; /* 现代浏览器标准 */
+    white-space: pre-wrap; /* 保留空格和换行，但允许自动换行 */
+    box-shadow: 0 2px 4px rgba(0,0,0,0.08); /* 增强阴影 */
+    line-height: 1.7; /* 增加行高 */
+    font-size: 1rem; /* 稍微增大字体 */
+    max-width: 100%; /* 确保内容不超过容器 */
+}
+
+.message-user .message-content {
+    background-color: #2b2b2b; /* DeepSeek/Claude 风格深色背景 */
+    color: white;
+    border-bottom-right-radius: 0.25rem; /* 右下角直角 */
+}
+
+.message-assistant .message-content {
+    background-color: white;
+    border: 1px solid #e5e7eb;
+    border-bottom-left-radius: 0.25rem; /* 左下角直角 */
+    color: #374151;
+}
+
+/* 输入框样式优化 */
+#messageInput {
+    border: 1px solid #e5e7eb !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    transition: all 0.2s;
+    font-size: 0.95rem;
+    padding: 0.75rem 1rem;
+}
+
+#messageInput:focus {
+    border-color: #2b2b2b !important;
+    box-shadow: 0 0 0 2px rgba(43, 43, 43, 0.1) !important;
+}
+
+#sendButton {
+    background-color: #2b2b2b;
+    border-color: #2b2b2b;
+    transition: all 0.2s;
+}
+
+#sendButton:hover {
+    background-color: #000;
+    border-color: #000;
+}
+
+/* 侧边栏优化 */
+.conversation-item {
+    transition: all 0.2s;
+    border: 1px solid transparent !important;
+    margin-bottom: 0.5rem;
+}
+
+.conversation-item:hover {
+    background-color: #f3f4f6 !important;
+}
+
+.conversation-item.active {
+    background-color: #e5e7eb !important;
+    border-color: transparent !important;
+}
+
+.conversation-item h6 {
+    color: #1f2937;
+    font-weight: 500;
+}
+
+/* 整体背景色 */
+#messageArea {
+    background-color: #ffffff !important; /* 纯白背景 */
+}
+
+/* 代码块样式优化 */
+.message-content pre {
+    background-color: #f6f8fa;
+    border: 1px solid #d0d7de;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin: 0.75rem 0;
+    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+}
+
+.message-content code {
+    background-color: rgba(175, 184, 193, 0.2);
+    padding: 0.2em 0.4em;
+    border-radius: 6px;
+    font-size: 85%;
+    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    border: none;
+}
+
+</style>
+{% endblock %}
+
+{% block extra_js %}
+{% load static %}
+<script src="{% static 'js/ai_chat.js' %}?v={{ 'now'|date:'U' }}"></script>
+<script>
+    // 侧边栏折叠功能
+    function toggleSidebar() {
+        const sidebar = document.getElementById('chatSidebar');
+        const showBtn = document.getElementById('showSidebarBtn');
+        const conversationList = document.querySelector('#chatSidebar .flex-grow-1');
+        
+        // 检查当前的内联样式或计算样式
+        const currentWidth = sidebar.style.width;
+        
+        if (currentWidth === '0px') {
+            // 展开
+            sidebar.style.width = '280px';
+            sidebar.classList.remove('p-0'); // 移除padding-0类
+            showBtn.style.display = 'none';
+            if (conversationList) conversationList.style.display = 'block';
+        } else {
+            // 折叠
+            sidebar.style.width = '0px';
+            sidebar.classList.add('p-0'); // 添加padding-0类以去除内边距
+            showBtn.style.display = 'block';
+            if (conversationList) conversationList.style.display = 'none';
+        }
+    }
+
+    // 确保页面加载后JS函数可用的检查
+    document.addEventListener('DOMContentLoaded', function() {
+        // 移动端适配：屏幕小于768px时默认折叠侧边栏
+        if (window.innerWidth < 768) {
+            // 初始状态手动调用一次以折叠
+            const sidebar = document.getElementById('chatSidebar');
+            const showBtn = document.getElementById('showSidebarBtn');
+            const conversationList = document.querySelector('#chatSidebar .flex-grow-1');
+            
+            sidebar.style.width = '0px';
+            sidebar.classList.add('p-0');
+            showBtn.style.display = 'block';
+            if (conversationList) conversationList.style.display = 'none';
+        }
+        
+        console.log('AI Chat JS loaded, available functions:', {
+            newConversation: typeof newConversation,
+            filterConversations: typeof filterConversations,
+            loadConversation: typeof loadConversation,
+            sendMessage: typeof sendMessage
+        });
+    });
+</script>
+{% endblock %}

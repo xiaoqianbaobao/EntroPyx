@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+
+{% block title %}上传会议录音 - 熵减X-AI{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="bi bi-cloud-upload"></i> 上传会议录音</h2>
+                <a href="{% url 'meeting_assistant:meeting_list' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> 返回列表
+                </a>
+            </div>
+            
+            <div class="row">
+                <div class="col-md-8 mx-auto">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">上传录音文件</h5>
+                        </div>
+                        <div class="card-body">
+                            <form id="uploadForm" enctype="multipart/form-data">
+                                {% csrf_token %}
+                                
+                                <div class="mb-3">
+                                    <label for="repository_id" class="form-label">仓库 *</label>
+                                    <select class="form-select" id="repository_id" name="repository_id" required>
+                                        <option value="">请选择仓库</option>
+                                        {% for repo in repositories %}
+                                        <option value="{{ repo.id }}">{{ repo.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="meeting_title" class="form-label">会议标题 *</label>
+                                    <input type="text" class="form-control" id="meeting_title" name="meeting_title" required
+                                           placeholder="例如：代码评审会议 - PR #123">
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="meeting_date" class="form-label">会议时间</label>
+                                    <input type="datetime-local" class="form-control" id="meeting_date" name="meeting_date">
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="participants" class="form-label">参会人员</label>
+                                    <input type="text" class="form-control" id="participants" name="participants"
+                                           placeholder="用逗号分隔，例如：张三,李四,王五">
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="audio_file" class="form-label">音频文件 *</label>
+                                    <input type="file" class="form-control" id="audio_file" name="audio_file" required
+                                           accept=".mp3,.wav,.m4a,.ogg,.aac,.flac">
+                                    <div class="form-text">
+                                        支持 MP3, WAV, M4A, OGG, AAC, FLAC 格式，最大 100MB
+                                    </div>
+                                </div>
+                                
+                                <div class="d-grid">
+                                    <button type="submit" class="btn btn-primary" id="uploadBtn">
+                                        <i class="bi bi-upload"></i> 开始上传
+                                    </button>
+                                </div>
+                            </form>
+                            
+                            <!-- 上传进度 -->
+                            <div id="uploadProgress" class="mt-4" style="display: none;">
+                                <div class="progress">
+                                    <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                                </div>
+                                <p class="text-center mt-2" id="uploadStatus">上传中...</p>
+                            </div>
+                            
+                            <!-- 上传结果 -->
+                            <div id="uploadResult" class="mt-4" style="display: none;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('uploadForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const form = this;
+    const formData = new FormData(form);
+    const uploadBtn = document.getElementById('uploadBtn');
+    const progressDiv = document.getElementById('uploadProgress');
+    const resultDiv = document.getElementById('uploadResult');
+    const progressBar = progressDiv.querySelector('.progress-bar');
+    const statusText = document.getElementById('uploadStatus');
+    
+    // 显示进度
+    uploadBtn.disabled = true;
+    uploadBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> 上传中...';
+    progressDiv.style.display = 'block';
+    resultDiv.style.display = 'none';
+    
+    fetch('/meeting-assistant/api/recordings/upload/', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        progressBar.style.width = '100%';
+        progressBar.classList.add('bg-success');
+        statusText.textContent = '上传成功！';
+        
+        if (data.recording_id) {
+            resultDiv.innerHTML = `
+                <div class="alert alert-success">
+                    <h5><i class="bi bi-check-circle"></i> 上传成功</h5>
+                    <p>${data.message}</p>
+                    <a href="/meeting-assistant/detail/${data.recording_id}/" class="btn btn-success">
+                        <i class="bi bi-eye"></i> 查看详情
+                    </a>
+                </div>
+            `;
+            resultDiv.style.display = 'block';
+            
+            // 3秒后跳转到详情页
+            setTimeout(() => {
+                window.location.href = `/meeting-assistant/detail/${data.recording_id}/`;
+            }, 3000);
+        } else if (data.error) {
+            throw new Error(data.error);
+        }
+    })
+    .catch(error => {
+        progressBar.classList.add('bg-danger');
+        statusText.textContent = '上传失败';
+        
+        resultDiv.innerHTML = `
+            <div class="alert alert-danger">
+                <h5><i class="bi bi-exclamation-circle"></i> 上传失败</h5>
+                <p>${error.message}</p>
+            </div>
+        `;
+        resultDiv.style.display = 'block';
+        
+        uploadBtn.disabled = false;
+        uploadBtn.innerHTML = '<i class="bi bi-upload"></i> 重新上传';
+    });
+});
+
+// 设置默认日期时间为当前时间
+document.getElementById('meeting_date').value = new Date().toISOString().slice(0, 16);
+</script>
+{% endblock %}

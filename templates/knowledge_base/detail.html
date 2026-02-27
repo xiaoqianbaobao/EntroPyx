@@ -1,0 +1,270 @@
+{% extends 'base.html' %}
+
+{% block title %}知识库详情 - 熵减X-AI{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <a href="/api/v1/knowledge/" class="text-decoration-none"><i class="bi bi-arrow-left"></i> 返回知识库</a>
+        <h2 class="mt-2">知识库文档详情</h2>
+    </div>
+    <div>
+        <span class="badge bg-{{ document.get_status_display|lower }} fs-5">
+            {{ document.get_status_display }}
+        </span>
+    </div>
+</div>
+
+<!-- 基本信息 -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">基本信息</h5>
+    </div>
+    <div class="card-body">
+        <table class="table">
+            <tr>
+                <td style="width: 120px;"><strong>标题</strong></td>
+                <td>{{ document.title }}</td>
+                <td style="width: 120px;"><strong>文件类型</strong></td>
+                <td>{{ document.file_type|upper }}</td>
+            </tr>
+            <tr>
+                <td><strong>文件名</strong></td>
+                <td>{{ document.file_name }}</td>
+                <td><strong>文件大小</strong></td>
+                <td>{{ document.file_size|filesizeformat }}</td>
+            </tr>
+            <tr>
+                <td><strong>创建时间</strong></td>
+                <td>{{ document.created_at|date:"Y-m-d H:i:s" }}</td>
+                <td><strong>更新时间</strong></td>
+                <td>{{ document.updated_at|date:"Y-m-d H:i:s" }}</td>
+            </tr>
+            {% if document.processed_at %}
+            <tr>
+                <td><strong>处理完成时间</strong></td>
+                <td colspan="3">{{ document.processed_at|date:"Y-m-d H:i:s" }}</td>
+            </tr>
+            {% endif %}
+        </table>
+    </div>
+</div>
+
+<!-- 提交信息 -->
+{% if document.commit_message %}
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">提交信息</h5>
+    </div>
+    <div class="card-body">
+        <div class="alert alert-info">
+            <strong>提交信息：</strong>
+            <pre>{{ document.commit_message }}</pre>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- 变更文件 -->
+{% if document.changed_files %}
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">变更文件</h5>
+    </div>
+    <div class="card-body">
+        <div class="list-group list-group-flush">
+            {% for file in document.changed_files %}
+            <div class="list-group-item">
+                <span class="badge bg-primary">{{ file.status }}</span>
+                <span class="ms-2">{{ file.path }}</span>
+                {% if file.is_critical %}
+                <span class="badge bg-warning text-dark ms-2">关键文件</span>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- 变更统计 -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title">章节数量</h5>
+                <h3 class="text-primary">{{ document.section_count }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title">关键词数量</h5>
+                <h3 class="text-success">{{ document.keyword_count }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title">实体数量</h5>
+                <h3 class="text-info">{{ document.entity_count }}</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- AI评审内容 -->
+{% if document.ai_review_content %}
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">AI评审内容</h5>
+    </div>
+    <div class="card-body">
+        <div class="alert alert-info">
+            {{ document.ai_review_content|linebreaks }}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Diff内容 -->
+{% if document.diff_content %}
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">代码变更 (Diff)</h5>
+    </div>
+    <div class="card-body">
+        <pre style="max-height: 400px; overflow: auto;">{{ document.diff_content }}</pre>
+    </div>
+</div>
+{% endif %}
+
+<!-- 文件操作 -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">文件操作</h5>
+    </div>
+    <div class="card-body">
+        <div class="d-flex gap-2">
+            {% if document.file %}
+            <a href="{{ MEDIA_URL }}{{ document.file }}" target="_blank" class="btn btn-primary">
+                <i class="bi bi-download"></i> 下载文件
+            </a>
+            {% endif %}
+            
+            {% if document.status == 'completed' %}
+            <button class="btn btn-success" onclick="exportDocument({{ document.id }})">
+                <i class="bi bi-file-earmark-pdf"></i> 导出PDF
+            </button>
+            {% endif %}
+            
+            <button class="btn btn-info" onclick="viewDocument({{ document.id }})">
+                <i class="bi bi-eye"></i> 在线查看
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- 知识图谱 -->
+{% if document.structured_data %}
+<div class="card mt-4">
+    <div class="card-header">
+        <h5 class="mb-0">知识图谱</h5>
+    </div>
+    <div class="card-body">
+        {% if document.structured_data.sections %}
+        <h6>章节结构</h6>
+        <div class="mb-3">
+            {% for section in document.structured_data.sections %}
+            <div class="border rounded p-2 mb-2">
+                <strong>{{ section.title }}</strong>
+                <small class="text-muted">{{ section.content|truncatewords:50 }}</small>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        
+        {% if document.structured_data.keywords %}
+        <h6>关键词</h6>
+        <div class="mb-3">
+            {% for keyword in document.structured_data.keywords %}
+            <span class="badge bg-secondary me-1">{{ keyword }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+        
+        {% if document.structured_data.entities %}
+        <h6>实体</h6>
+        <div class="mb-3">
+            {% for entity in document.structured_data.entities %}
+            <div class="border rounded p-2 mb-2">
+                <strong>{{ entity.name }}</strong> ({{ entity.type }})
+                <small class="text-muted">{{ entity.description|truncatewords:30 }}</small>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- 反馈操作 -->
+<div class="card mt-4">
+    <div class="card-header">
+        <h5 class="mb-0">反馈</h5>
+    </div>
+    <div class="card-body">
+        <form id="feedbackForm">
+            <div class="mb-3">
+                <label for="feedbackText" class="form-label">反馈内容</label>
+                <textarea class="form-control" id="feedbackText" rows="4" placeholder="请提供您的反馈意见..."></textarea>
+            </div>
+            <div class="mb-3">
+                <label for="feedbackType" class="form-label">反馈类型</label>
+                <select class="form-select" id="feedbackType">
+                    <option value="suggestion">建议</option>
+                    <option value="error">错误</option>
+                    <option value="improvement">改进</option>
+                    <option value="other">其他</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-send"></i> 提交反馈
+            </button>
+        </form>
+    </div>
+</div>
+
+<script>
+function exportDocument(documentId) {
+    // 导出PDF功能
+    console.log('导出文档:', documentId);
+    alert('导出功能正在开发中...');
+}
+
+function viewDocument(documentId) {
+    // 在线查看功能
+    console.log('查看文档:', documentId);
+    alert('在线查看功能正在开发中...');
+}
+
+document.getElementById('feedbackForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const feedbackText = document.getElementById('feedbackText').value;
+    const feedbackType = document.getElementById('feedbackType').value;
+    
+    if (!feedbackText.trim()) {
+        alert('请输入反馈内容');
+        return;
+    }
+    
+    console.log('提交反馈:', { type: feedbackType, text: feedbackText });
+    alert('反馈已提交，感谢您的意见！');
+    
+    // 重置表单
+    this.reset();
+});
+</script>
+{% endblock %}

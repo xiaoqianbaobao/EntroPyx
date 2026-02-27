@@ -1,0 +1,25 @@
+FROM python:3.11-slim
+
+# 设置工作目录
+WORKDIR /app
+
+# 更新apt源并清理缓存
+RUN apt-get update && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# 复制requirements.txt和离线依赖包
+COPY requirements.txt .
+COPY python_packages /tmp/python_packages
+
+# 安装Python依赖（优先使用离线包，如果离线包不存在则从网络安装）
+# 使用更宽松的 offline 安装配置
+RUN pip install --no-cache-dir --no-index --find-links=/tmp/python_packages --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org --process-dependency-links -r requirements.txt || \
+    pip install --no-cache-dir --index-url https://pypi.tuna.tsinghua.edu.cn/simple/ -r requirements.txt
+
+# 复制应用代码
+COPY . .
+
+# 暴露端口（虽然Celery不需要HTTP端口，但保留以保持一致性）
+EXPOSE 8000
+
+# 启动命令 - 专门用于Celery worker
+CMD ["celery", "-A", "config", "worker", "-l", "info"]
